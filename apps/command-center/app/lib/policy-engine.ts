@@ -1,5 +1,6 @@
 import { dirname, resolve } from "node:path";
 import { isInside, type SkillMeta, type RiskLevel } from "./execution-authority";
+import type { ToolSurface } from "./capabilities";
 
 /* =============================================================================
    Policy Engine
@@ -55,6 +56,16 @@ export type Plan = {
   attempt: number;
   /** The ledger entry a replan learned from. Never written, only read. */
   basedOn?: { entryId: string; status: string; reason?: string };
+  /**
+   * The session's capability set, when the plan is running inside one.
+   *
+   * Optional so that pure policy evaluation stays usable with no runtime
+   * attached, and checked with a presence test rather than an assumption:
+   * a plan evaluated without a surface has had its composition signals
+   * skipped, and pretending otherwise would report a completeness that was
+   * not earned.
+   */
+  capabilities?: ToolSurface;
 };
 
 export type PlanLimits = {
@@ -90,6 +101,9 @@ export type PolicyCode =
   | "collect_then_write"
   | "reserved_action"
   | "undeclared_risk"
+  | "capability_not_granted"
+  | "capability_escalation"
+  | "cross_service_exfiltration"
   | "requires_review";
 
 export type PolicyVerdict =
@@ -103,6 +117,36 @@ export type PolicyVerdict =
    point of this module. */
 const READ_ACTIONS = new Set(["read_file", "list_directory"]);
 const WRITE_ACTIONS = new Set(["write_file", "delete_file", "move_file", "mkdir"]);
+
+/* Whether an action reads or writes is a property of the *grant*, not of the
+   action's name. `gmail.read` and `drive.write` say so in their names, but
+   a service's read tool is still a read and hard-coding a list of every
+   service's tool names means the first one added that nobody remembered
+   becomes invisible to the composition rules — silently, which is the worst
+   way for it to fail.
+   
+   So the direction is taken from the registry when a surface is present, and
+   from the name only as a fallback for plans evaluated without one. A tool
+   whose name says neither is treated as a writer, because a capability that
+   might change things being classified as harmless is the expensive error. */
+function isRead(step: PlanNode, surface?: ToolSurface): boolean {
+  const grant = surface?.grantFor(step.action);
+  if (grant) {
+    return /(^|[.\-_])read$/.test(grant.capability) || /(^|[.\-_])(read|list|get|fetch|search)$/.test(step.action);
+  }
+  return READ_ACTIONS.has(step.action);
+}
+
+function isWrite(step: PlanNode, surface?: ToolSurface): boolean {
+  const grant = surface?.grantFor(step.action);
+  if (grant) {
+    return (
+      /(^|[.\-_])(write|send|upload|delete|remove|publish|create|update|put|post)$/.test(grant.capability) ||
+      /(^|[.\-_])(write|send|upload|delete|remove|publish|create|update)$/.test(step.action)
+    );
+  }
+  return WRITE_ACTIONS.has(step.action);
+}
 
 function payloadPath(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") return null;
@@ -230,13 +274,21 @@ export function evaluatePlan(plan: Plan, limits: PlanLimits = DEFAULT_LIMITS): P
      to stay under a threshold: no step is worth refusing, so the authority
      refuses none of them, and the purpose is accomplished anyway. This is
      the one signal that cannot be expressed as a per-step rule at all. */
-  const highest = planRisk(plan)!;
+  /* The risk that counts is the risk of the capability being used, not the
+     risk a step declares about itself. A step whose skill says `low` while
+     the session's grant for that tool says `high` is the laundering case
+     exactly, and reading the step's own label first would let the more
+     specific signal be pre-empted by the more general one. So when a
+     surface is present it is the authority on risk, and a step that
+     under-declares is caught by the composition rules below instead. */
+  const surfaceRisk = plan.capabilities?.capabilitiesRisk?.();
+  const highest = surfaceRisk ?? planRisk(plan)!;
   const rank: RiskLevel[] = ["low", "medium", "high"];
   if (rank.indexOf(highest) < rank.indexOf(plan.goalRisk)) {
     return {
       allowed: false,
       code: "privilege_laundering",
-      reason: `the goal is ${plan.goalRisk} risk but no step exceeds ${highest}; the plan would assemble a ${plan.goalRisk}-risk outcome from steps that each declare themselves ${highest}`,
+      reason: `the goal is ${plan.goalRisk} risk but nothing in the plan exceeds ${highest}; the plan would assemble a ${plan.goalRisk}-risk outcome from steps that each declare themselves ${highest}`,
       notices,
     };
   }
@@ -298,6 +350,71 @@ export function evaluatePlan(plan: Plan, limits: PlanLimits = DEFAULT_LIMITS): P
           reason: `a high-risk goal reads across ${readDirs.size} directories and then writes; the shape is the one a human should confirm before it runs`,
           notices,
         };
+      }
+    }
+  }
+
+  /* ── capability composition ──────────────────────────────────────────────
+     The signals above look at one plan. These look at what the plan does to
+     the *session's* capability set, which is the other half of the risk: not
+     what a step says it is, but where the data ends up.
+
+     The shape is the same one a data exfiltration takes and it is visible
+     without reading a single byte of content: read from several services,
+     gather them into a dependency chain, write the result somewhere the
+     task was never granted. */
+  if (plan.capabilities) {
+    const surfaces = plan.capabilities;
+
+    /* A step using a capability the session does not hold. Normally
+       impossible — the surface is enforced at the executor before a process
+       starts — so reaching this means a plan was assembled outside the
+       session, which is a bug worth naming rather than quietly dropping. */
+    for (const step of plan.steps) {
+      if (surfaces.has(step.action)) continue;
+      return {
+        allowed: false,
+        code: "capability_not_granted",
+        reason: `step "${step.id}" uses "${step.action}", which is not in this task's capability set (granted: ${
+          surfaces.actions().join(", ") || "nothing"
+        })`,
+        notices,
+      };
+    }
+
+    /* Read across services, then write. Each read is inside a capability the
+       task holds; the aggregation across them is what the task was not
+       asked for. Reported by capability rather than by tool name, because
+       the question a reviewer asks is "why did this need three services?"
+       and a list of tool names does not answer it. */
+    const readCapabilities = new Set<string>();
+    for (const step of plan.steps) {
+      if (!isRead(step, surfaces)) continue;
+      const grant = surfaces.grantFor(step.action);
+      if (grant) readCapabilities.add(grant.capability);
+    }
+
+    const writeSteps = plan.steps.filter((s) => isWrite(s, surfaces));
+    if (readCapabilities.size >= 2 && writeSteps.length > 0) {
+      const writeCapabilities = new Set<string>();
+      for (const step of writeSteps) {
+        const grant = surfaces.grantFor(step.action);
+        if (grant) writeCapabilities.add(grant.capability);
+      }
+      /* A read/write split across capabilities is the exfiltration shape. A
+         plan that reads and writes the *same* capability — edit a note, say —
+         is ordinary work, and refusing it would be the signal becoming a
+         denier of everything. */
+      const crossed = [...writeCapabilities].some((c) => !readCapabilities.has(c));
+      if (crossed) {
+        const reason =
+          `the plan reads across ${readCapabilities.size} capabilities (${[...readCapabilities].sort().join(", ")}) ` +
+          `and writes to ${[...writeCapabilities].sort().join(", ")}; gathering from several services and writing ` +
+          `elsewhere is a shape a person should confirm, and each individual step is permitted on its own`;
+        if (plan.goalRisk === "high") {
+          return { allowed: false, code: "cross_service_exfiltration", reason, notices };
+        }
+        notices.push(reason);
       }
     }
   }

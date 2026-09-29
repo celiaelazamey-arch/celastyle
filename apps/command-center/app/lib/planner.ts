@@ -146,6 +146,9 @@ export function buildPlan(input: {
    * carried forward by whoever increments it.
    */
   attempt?: number;
+  /** The session's capability set. Carried into the policy check so
+   *  composition can be judged against what the task actually holds. */
+  capabilities?: Plan["capabilities"];
   limits?: PlanLimits;
 }): Planned | PlanRejection {
   const limits = input.limits ?? DEFAULT_LIMITS;
@@ -155,6 +158,7 @@ export function buildPlan(input: {
     steps: orderPlan(input.steps),
     attempt: input.attempt ?? 0,
     basedOn: input.basedOn,
+    capabilities: input.capabilities,
   };
   const verdict = evaluatePlan(plan, limits);
   return verdict.allowed ? { ok: true, plan, verdict } : { ok: false, verdict };
@@ -290,6 +294,10 @@ export function replan(input: {
     goalRisk: input.plan.goalRisk,
     steps: proposal.steps,
     attempt: input.plan.attempt + 1,
+    /* Carried forward. A replan that lost the surface would be evaluated
+       without its composition signals, which is the one thing a replan must
+       never be able to do to itself. */
+    capabilities: input.plan.capabilities,
     basedOn: {
       entryId: input.signal?.entryId ?? input.failure.entry?.id ?? "unknown",
       status: input.failure.result.status,

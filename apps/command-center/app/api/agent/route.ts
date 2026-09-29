@@ -1,5 +1,7 @@
 import { AgentSession, defaultLedgerPath } from "../../lib/session";
+import { defaultRegistry } from "../../lib/default-profiles";
 import type { PlanNode } from "../../lib/policy-engine";
+import type { CapabilityRequest } from "../../lib/capabilities";
 
 /* =============================================================================
    Agent — the entry point to the execution path
@@ -34,7 +36,27 @@ type Body = {
   goal?: unknown;
   goalRisk?: unknown;
   steps?: unknown;
+  needs?: unknown;
 };
+
+/** What the client says it needs. Names only — a client cannot widen its
+ *  own scope by describing it more precisely. */
+function readNeeds(value: unknown): { ok: true; needs: CapabilityRequest[] } | { ok: false; error: string } {
+  if (value === undefined) return { ok: true, needs: [] };
+  if (!Array.isArray(value)) return { ok: false, error: "needs must be an array" };
+  const needs: CapabilityRequest[] = [];
+  for (let i = 0; i < value.length; i += 1) {
+    const raw = value[i] as { capability?: unknown; justification?: unknown } | null;
+    if (!raw || typeof raw !== "object" || typeof raw.capability !== "string") {
+      return { ok: false, error: `need ${i} has no capability name` };
+    }
+    needs.push({
+      capability: raw.capability,
+      justification: typeof raw.justification === "string" ? raw.justification : undefined,
+    });
+  }
+  return { ok: true, needs };
+}
 
 const RISK = ["low", "medium", "high"] as const;
 
@@ -120,15 +142,43 @@ export async function POST(request: Request) {
     return Response.json({ error: parsed.error }, { status: 400 });
   }
 
+  const needs = readNeeds(body.needs);
+  if (!needs.ok) {
+    return Response.json({ error: needs.error }, { status: 400 });
+  }
+
+  /* Every step must name a capability this request asked for. Checked here
+     as well as in the engine so the client gets a refusal naming the
+     capability it forgot, rather than a policy verdict about a plan it
+     cannot see. Same check, two places: the route is where a caller learns
+     what it may ask for, and the engine is where it holds regardless of
+     who called it. */
+  if (needs.ok && needs.needs.length > 0) {
+    const asked = new Set(needs.needs.map((n) => n.capability));
+    for (const step of parsed.steps) {
+      const grant = defaultRegistry().allGrants().find((g) => g.action === step.action);
+      if (!grant) continue; // unknown tools are the executor's business
+      if (asked.has(grant.capability)) continue;
+      return Response.json(
+        {
+          error: `step "${step.id}" needs capability "${grant.capability}", which this request did not ask for`,
+          requested: [...asked],
+        },
+        { status: 403 },
+      );
+    }
+  }
+
   try {
     const session = await AgentSession.open({
       ledgerPath: defaultLedgerPath(process.cwd().replace(/\/apps\/command-center$/, "")),
-    });
+    }).then((s) => s.useRegistry(defaultRegistry()));
 
     const { outcome, summary } = await session.run({
       goal: body.goal,
       goalRisk: body.goalRisk as (typeof RISK)[number],
       steps: parsed.steps,
+      needs: needs.ok ? needs.needs : [],
       /* No approve and no replan from the wire. Approval is a human
          decision and adaptation is a server strategy; neither is something
          an HTTP body should be able to supply. A medium or high-risk skill
@@ -153,6 +203,10 @@ export async function POST(request: Request) {
           authorityReason: s.authorityReason,
           sealError: s.sealError,
         })),
+        /* The capability set is returned so a caller can see what it was
+           given, not only what it asked for. A surface nobody can read is a
+           surface nobody can tell whether it was narrowed. */
+        capabilities: session.surface()?.toJSON() ?? null,
         ledger: {
           path: summary.ledgerPath,
           entries: summary.entries,

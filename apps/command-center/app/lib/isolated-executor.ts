@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { constants as FS } from "node:fs";
 import { isAbsolute, relative, resolve, dirname, basename, join } from "node:path";
 import { isInside, type SkillMeta } from "./execution-authority";
+import type { ToolSurface } from "./capabilities";
 
 /* =============================================================================
    Isolated Executor
@@ -79,6 +80,20 @@ export type ExecutorOptions = {
   defaultTimeoutMs?: number;
   /** Per-stream cap. A tool that logs loudly dies rather than being believed. */
   maxOutputBytes?: number;
+  /**
+   * The task's capability set. When set, an action outside it is not run at
+   * all — the call ends before a child process is spawned.
+   *
+   * This is where the capability boundary is actually load-bearing. The
+   * policy engine refuses plans it dislikes, but a refusal is a decision
+   * that can be mis-wired. Here the tool is simply not on offer: no argv is
+   * built, no process starts, and there is nothing to bypass downstream
+   * because nothing downstream was reached.
+   *
+   * The check is duplicated in the session host on purpose. A boundary
+   * enforced in exactly one place is a boundary that one refactor can move.
+   */
+  surface?: ToolSurface;
 };
 
 const DEFAULTS = {
@@ -287,6 +302,7 @@ export class IsolatedExecutor {
   private readonly workerPath: string;
   private readonly defaultTimeoutMs: number;
   private readonly maxOutputBytes: number;
+  private surface?: ToolSurface;
 
   /**
    * What each write overwrote, keyed by path, so a failed verification can be
@@ -301,6 +317,19 @@ export class IsolatedExecutor {
     this.workerPath = options.workerPath ?? defaultWorkerPath();
     this.defaultTimeoutMs = options.defaultTimeoutMs ?? DEFAULTS.timeoutMs;
     this.maxOutputBytes = options.maxOutputBytes ?? DEFAULTS.maxOutputBytes;
+    this.surface = options.surface;
+  }
+
+  /**
+   * Replace the capability set.
+   *
+   * Used when a task is granted a capability mid-run. The replacement is
+   * whole rather than additive because a surface is a value: handing the
+   * executor the exact set currently in force means there is no interval
+   * during which it holds a wider one than the task has.
+   */
+  setSurface(surface: ToolSurface | undefined): void {
+    this.surface = surface;
   }
 
   /** How many undo records are being held. Exposed so a leak is observable. */
@@ -333,6 +362,20 @@ export class IsolatedExecutor {
     payload: unknown,
     skill?: SkillMeta,
   ): Promise<ExecutionOutcome> {
+    /* The capability boundary, before anything else. Deliberately ahead of
+       the path check: a tool that was never granted has no business having
+       its payload examined, and the refusal it gets should name the
+       capability rather than a path the agent was never entitled to use. */
+    if (this.surface && !this.surface.has(action)) {
+      const reason =
+        this.surface.denyReasonFor(action) ?? `"${action}" is not in this task's capability set`;
+      return {
+        ok: false,
+        ms: 0,
+        failure: { kind: "refused", reason },
+      };
+    }
+
     const allowedDirectories = skill?.allowed_directories ?? [];
     const isWrite = action === "write_file";
     const isRead = action === "read_file";

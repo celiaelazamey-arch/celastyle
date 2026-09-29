@@ -6,6 +6,7 @@ import { runPlan, type PlanOutcome, type RunDeps } from "./planner";
 import type { PlanNode, PolicyVerdict } from "./policy-engine";
 import type { Verifier, Executor } from "./cognitive-pipeline";
 import type { PlanLimits } from "./policy-engine";
+import { ToolRegistry, resolveSurface, extendSurface, explainResolution, type CapabilityRequest, type ToolSurface } from "./capabilities";
 
 /* =============================================================================
    Agent Session
@@ -52,6 +53,12 @@ export type AgentRequest = {
    *  one the run ends rather than improvising. */
   replan?: RunDeps["replan"];
   approve?: RunDeps["approve"];
+  /**
+   * What this task declares it needs. The surface is built from this and
+   * from nothing else, so a step naming anything outside it is a step
+   * naming something that was never on offer.
+   */
+  needs?: CapabilityRequest[];
 };
 
 export type SessionSummary = {
@@ -143,6 +150,7 @@ export class AgentSession {
   private readonly executor: Executor;
   private readonly verifier: Verifier;
   private resumed: boolean;
+  private currentSurface: ToolSurface | undefined;
 
   private constructor(
     readonly ledgerPath: string,
@@ -150,11 +158,13 @@ export class AgentSession {
     executor: Executor,
     verifier: Verifier,
     resumed: boolean,
+    surface?: ToolSurface,
   ) {
     this.ledger = ledger;
     this.executor = executor;
     this.verifier = verifier;
     this.resumed = resumed;
+    this.currentSurface = surface;
   }
 
   /**
@@ -170,6 +180,11 @@ export class AgentSession {
     workerPath?: string;
     verifier?: Verifier;
     limits?: PlanLimits;
+    /** Host-supplied capability set. When omitted the session gets a
+     *  surface with nothing in it, which is the correct default: a session
+     *  that was not given capabilities has none, and the safe reading of an
+     *  absent surface is an empty one rather than the whole registry. */
+    surface?: ToolSurface;
   }): Promise<AgentSession> {
     const { ledgerPath } = options;
     mkdirSync(dirname(ledgerPath), { recursive: true });
@@ -187,9 +202,13 @@ export class AgentSession {
     };
 
     const ledger = new EventLedger([...existing.all()], sink);
-    const executor = new IsolatedExecutor(
-      options.workerPath ? { workerPath: options.workerPath } : {},
-    );
+    const executor = new IsolatedExecutor({
+      ...(options.workerPath ? { workerPath: options.workerPath } : {}),
+      /* The surface is installed on the executor as well as checked by the
+         session. Two places, on purpose: a boundary enforced in one place is
+         a boundary one refactor can move. */
+      surface: options.surface,
+    });
 
     return new AgentSession(
       ledgerPath,
@@ -197,7 +216,66 @@ export class AgentSession {
       executor,
       options.verifier ?? new FileSystemVerifier(),
       resumed,
+      options.surface,
     );
+  }
+
+  /** The registry is host-side. It is held so capabilities can be granted
+   *  later, and it is never handed to a plan or a step. */
+  private readonly registry = new ToolRegistry();
+
+  /** Install a registry. Called by the host at composition time. */
+  useRegistry(registry: ToolRegistry): this {
+    for (const profile of registry.list()) this.registry.register(profile);
+    return this;
+  }
+
+  /**
+   * Replace the capability set for this session.
+   *
+   * Reaches the executor as well as the session, because the session's check
+   * is a policy decision and the executor's is the boundary. A step the
+   * session would allow must still find the executor already holding the
+   * same set, or the two could disagree about what is permitted.
+   */
+  setSurface(surface: ToolSurface | undefined): void {
+    this.currentSurface = surface;
+    (this.executor as { setSurface?: (s: ToolSurface | undefined) => void }).setSurface?.(surface);
+  }
+
+  surface(): ToolSurface | undefined {
+    return this.currentSurface;
+  }
+
+  /**
+   * Just-in-time grant: add a capability the task turned out to need.
+   *
+   * Returns a new surface; the previous one is not widened in place, so
+   * anything already run stays under the set it was given.
+   */
+  async requestCapability(
+    need: CapabilityRequest,
+    approve?: (request: { capability: string; action: string; justification?: string }) =>
+      | Promise<boolean | undefined>
+      | boolean
+      | undefined,
+  ): Promise<{ ok: true; granted: string[]; surface: ToolSurface } | { ok: false; reason: string }> {
+    if (!this.currentSurface) {
+      return { ok: false, reason: "this session has no capability set to extend" };
+    }
+    const extension = await extendSurface({
+      surface: this.currentSurface,
+      registry: this.registry,
+      need,
+      approve,
+    });
+    if (!extension.ok) {
+      /* A refusal from the grant path carries its own reason on both
+         branches; the ok-checked form keeps one rule for the union. */
+      return { ok: false, reason: "reason" in extension ? extension.reason : "the extension failed" };
+    }
+    this.setSurface(extension.surface);
+    return { ok: true, granted: extension.granted, surface: extension.surface };
   }
 
   summary(): SessionSummary {
@@ -227,10 +305,42 @@ export class AgentSession {
   async run(request: AgentRequest): Promise<SessionRun> {
     const { buildPlan } = await import("./planner");
 
+    /* The surface is resolved from what the task declared it needs, before
+       the proposal is even looked at. A step outside this set is not refused
+       later — it names a tool that was never on offer for this task, and the
+       executor will not start a process for it. */
+    if (request.needs) {
+      const resolved = resolveSurface({
+        registry: this.registry,
+        taskId: request.goal.slice(0, 64),
+        needs: request.needs,
+      });
+      if (!resolved.ok) {
+        return {
+          summary: this.summary(),
+          outcome: {
+            plan: { goal: request.goal, goalRisk: request.goalRisk, steps: request.steps, attempt: 0 },
+            steps: [],
+            completed: [],
+            failures: [],
+            replans: 0,
+            status: "rejected",
+            reason: `no capability set could be built: ${explainResolution(resolved)}`,
+          },
+        };
+      }
+      this.setSurface(resolved.surface);
+    }
+
     const built = buildPlan({
       goal: request.goal,
       goalRisk: request.goalRisk,
       steps: request.steps,
+      /* The surface goes into the plan so the policy engine can judge the
+         composition of the steps against what this task actually holds —
+         reading across three services and writing to a fourth is a property
+         of the plan, not of any one step. */
+      capabilities: this.currentSurface,
     });
     if (!built.ok) {
       /* A refused plan is refused before the ledger is touched, so a plan

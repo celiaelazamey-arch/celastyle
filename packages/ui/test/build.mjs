@@ -61,6 +61,7 @@ for (const entry of [
   "cognitive-pipeline.ts",
   "policy-engine.ts",
   "planner.ts",
+  "capabilities.ts",
   "session.ts",
   "isolated-executor.ts",
 ]) {
