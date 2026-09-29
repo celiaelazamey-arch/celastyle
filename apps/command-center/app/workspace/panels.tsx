@@ -406,6 +406,18 @@ export function VerifyPanel({ stream }: { stream: StreamResult }) {
               commit {run.runId}
             </span>
           ) : null}
+          {/* Shown because a replayed run looks identical to a live one in
+              every other respect, and "these numbers are real" is only half
+              the truth — the other half is that nothing is running right now,
+              which is what a reader watching a progress panel assumes. */}
+          {run.cached ? (
+            <span className="font-mono text-xs text-[var(--text-dim)]">
+              · replayed
+              {run.measuredAt
+                ? ` from ${new Date(run.measuredAt).toLocaleTimeString()}`
+                : ""}
+            </span>
+          ) : null}
           {run.scope ? (
             <span className="font-mono text-xs text-[var(--text-dim)]">
               · {run.scope}

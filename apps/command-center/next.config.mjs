@@ -16,6 +16,11 @@ const nextConfig = {
   // So the gate sets NEXT_DIST_DIR and its build lands in a private directory
   // that no running server is using.
   distDir: process.env.NEXT_DIST_DIR || ".next",
+
+  /* The dev server is reached through a preview proxy on a different origin
+     than localhost. Next.js 15 warns about this and, in a future major,
+     blocks it — which would break the preview rather than warn about it. */
+  allowedDevOrigins: ["*.e2b.app", "localhost", "127.0.0.1"],
 };
 
 export default nextConfig;

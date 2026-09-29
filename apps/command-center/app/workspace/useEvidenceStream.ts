@@ -52,6 +52,12 @@ export type LiveRun = {
     buildSeconds: number | null;
   };
   deploy?: { environment: string; outcome: "pass" | "fail" };
+  /** True when these gate results were replayed from an earlier run in this
+   *  process rather than measured for this connection. The numbers are real;
+   *  what did not happen is work running now. */
+  cached?: boolean;
+  /** When a cached run's commands actually executed. */
+  measuredAt?: number;
   /** Set when the stream reports an error rather than a verdict. */
   error?: string;
   at: number;
@@ -123,6 +129,13 @@ export function useEvidenceStream(url = "/api/telemetry") {
             };
             break;
           }
+          case "run:cached": {
+            const current = runRef.current;
+            if (!current) return;
+            current.cached = true;
+            current.measuredAt = event.measuredAt;
+            break;
+          }
           case "run:end": {
             const current = runRef.current;
             if (!current) return;
@@ -131,6 +144,7 @@ export function useEvidenceStream(url = "/api/telemetry") {
             current.scope = event.scope;
             current.verdict = event.verdict;
             current.summary = event.summary;
+            current.cached = event.cached;
 
             /* One run, one connection. `EventSource` reconnects whenever a
                server closes the stream normally — so a completed run would
@@ -164,7 +178,14 @@ export function useEvidenceStream(url = "/api/telemetry") {
     source.onopen = () => setStatus("live");
     source.onmessage = handle;
     // Named events bypass onmessage, so each is bound explicitly.
-    for (const name of ["run:start", "gate", "run:end", "deploy", "error"]) {
+    for (const name of [
+      "run:start",
+      "run:cached",
+      "gate",
+      "run:end",
+      "deploy",
+      "error",
+    ]) {
       source.addEventListener(name, handle as EventListener);
     }
 

@@ -12,7 +12,12 @@
  *
  * Run: node test/verdict.test.mjs  (after `npm run test -w @celastyle/ui`)
  */
-import { deriveVerdict, gateEnv, readTestOutput } from "../.test-build-workspace/lib/verify.js";
+import {
+  deriveVerdict,
+  gateEnv,
+  readTestOutput,
+  verify,
+} from "../.test-build-workspace/lib/verify.js";
 
 let pass = 0;
 let fail = 0;
@@ -137,6 +142,16 @@ console.log("\n\x1b[1mgateEnv\x1b[0m");
 }
 
 {
+  /* Without this marker the recursion is silent and catastrophic: the suite
+     is a gate, so verify() → npm test → verify() ran until the gate timed
+     out, and the timeout was reported as a failing build. A broken build is
+     the most credible-looking lie this system can tell, which is exactly why
+     it needed a guard rather than a longer timeout. */
+  const env = gateEnv({}, {});
+  check("a gate marks its process tree so nested runs stand down", env.CELASTYLE_GATE === "1");
+}
+
+{
   // Per-gate values must win over the defaults, or a gate could never
   // override the shared environment.
   const env = gateEnv({ env: { NODE_ENV: "test" } }, { NODE_ENV: "development" });
@@ -171,6 +186,45 @@ console.log("\n\x1b[1mreadTestOutput\x1b[0m");
   const parsed = readTestOutput("Error: command failed with exit 1\n");
   check("a run with no summary is not counted as zero", parsed.value !== "0/0", `got ${parsed.value}`);
   check("a run with no summary says so", parsed.value === "no summary", `got ${parsed.value}`);
+}
+
+console.log("\n\x1b[1mverify() cache semantics\x1b[0m");
+
+/* The suite is itself one of the gates, so calling verify() from inside it
+   would be verify() → npm test → verify() — an unbounded recursion that ends
+   in a timeout reported as a broken build. When this file is running *as* a
+   gate, the live checks stand down; the pure ones above still run. */
+if (process.env.CELASTYLE_GATE) {
+  check("live cache checks stood down inside a gate (no recursion)", true);
+} else {
+  /* The defect: a second connection hit the cache and received only run:end.
+     No gate events at all, and a finishedAt that predated the connection —
+     a run that appeared to finish seconds before it started.
+
+     The numbers are still real measurements; what was missing was any signal
+     that they had already been taken. Replaying them without that signal
+     makes a stale run indistinguishable from a live one. */
+  const first = await verify();
+  const second = await verify();
+
+  check("a fresh run is not marked cached", first.cached === false);
+  check("a repeat run is marked cached", second.cached === true);
+  check(
+    "a cached run still carries real gate results",
+    second.gates.length === first.gates.length && second.gates.length > 0,
+  );
+  check(
+    "a cached run reports when it was actually measured",
+    second.finishedAt === first.finishedAt,
+  );
+  check(
+    "a cached run and a fresh run agree on the verdict",
+    second.verdict === first.verdict,
+  );
+  check(
+    "serving from cache does not mutate the stored run",
+    (await verify()).cached === true,
+  );
 }
 
 console.log(`\n${fail === 0 ? "\x1b[32m✅" : "\x1b[31m❌"} ${pass} passed, ${fail} failed\n`);

@@ -84,7 +84,8 @@ export async function GET(request: Request) {
 
       heartbeat = setInterval(() => send(comment("running")), HEARTBEAT_MS);
 
-      send(encode("run:start", { type: "run:start", at: Date.now() }));
+      const connectedAt = Date.now();
+      send(encode("run:start", { type: "run:start", at: connectedAt }));
 
       try {
         const result = await verify({
@@ -114,6 +115,42 @@ export async function GET(request: Request) {
             ),
         });
 
+        /* A run served from cache has no live gate events behind it — those
+           commands finished before this client connected. Emitting nothing
+           would show a panel that jumps straight to a verdict with no
+           history, and the recorded `finishedAt` would predate this
+           connection entirely.
+
+           So the real results are replayed, labelled as cached. They are
+           still measurements this process actually made; what they are not is
+           a description of work happening right now, and the event says so
+           rather than faking a progress animation. */
+        if (result.cached) {
+          send(
+            encode("run:cached", {
+              type: "run:cached",
+              runId: result.runId,
+              measuredAt: result.finishedAt,
+              at: Date.now(),
+            }),
+          );
+          for (const gate of result.gates) {
+            send(
+              encode("gate", {
+                type: "gate",
+                gate: gate.id,
+                outcome: gate.outcome,
+                value: gate.value,
+                detail: gate.detail,
+                ms: gate.ms,
+                environmental: gate.environmental,
+                cached: true,
+                at: Date.now(),
+              }),
+            );
+          }
+        }
+
         send(
           encode("run:end", {
             type: "run:end",
@@ -122,6 +159,11 @@ export async function GET(request: Request) {
             scope: result.scope,
             verdict: result.verdict,
             summary: result.summary,
+            cached: result.cached,
+            /* For a cached run this genuinely predates the connection, and
+               that is the honest value: it is when the commands ran. The
+               client is told `cached` precisely so it does not read this as a
+               run that finished before it started. */
             finishedAt: result.finishedAt,
             at: Date.now(),
           }),

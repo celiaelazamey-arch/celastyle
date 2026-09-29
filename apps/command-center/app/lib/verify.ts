@@ -48,6 +48,10 @@ export type Verification = {
   commit: string;
   startedAt: number;
   finishedAt: number;
+  /** True when these results were replayed from a previous run rather than
+   *  measured for this caller. The numbers are real either way; what differs
+   *  is whether anything ran just now. */
+  cached: boolean;
   gates: GateResult[];
   verdict: "VERIFIED" | "REJECTED" | "IN_REVIEW";
   /**
@@ -261,6 +265,13 @@ export function gateEnv(
     CI: "1",
     FORCE_COLOR: "0",
     NODE_ENV: "production",
+    /* Marks this process tree as running *inside* a gate.
+
+       The test suite is itself a gate, so anything the suite does must not
+       re-enter the verifier: verify() → npm test → verify() would recurse
+       until the gate timed out and reported a failure that looked like a
+       broken build. Code under test checks this and steps aside. */
+    CELASTYLE_GATE: "1",
     ...gate.env,
   };
 }
@@ -400,7 +411,13 @@ export async function verify(
     onGateState?: (id: string, state: "running" | "resolved") => void;
   } = {},
 ): Promise<Verification> {
-  if (!options.force && cached) return cached;
+  if (!options.force && cached) {
+    /* Flagged so the caller can say so out loud. A run served from cache is
+       still a real measurement — the same commands really did produce these
+       numbers — but nothing was re-measured *now*, and a client that cannot
+       tell the two apart will draw conclusions it has not earned. */
+    return { ...cached, cached: true };
+  }
   // Concurrent callers share one run: the build is expensive and a burst of
   // SSE connections must not each trigger their own. The subscriber attached
   // to the first caller is the one that gets progress; later callers get the
@@ -440,6 +457,7 @@ export async function verify(
       commit: context.commit,
       startedAt,
       finishedAt,
+      cached: false,
       gates,
       verdict: deriveVerdict(gates),
       summary: {
@@ -498,7 +516,16 @@ export type TelemetryWireEvent =
       scope: string;
       verdict: Verification["verdict"];
       summary: Verification["summary"];
+      /** The gates were not re-measured for this connection. */
+      cached: boolean;
       finishedAt: number;
+      at: number;
+    }
+  | {
+      type: "run:cached";
+      runId: string;
+      /** When the commands behind these numbers actually ran. */
+      measuredAt: number;
       at: number;
     }
   | {
