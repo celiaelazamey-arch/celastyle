@@ -26,12 +26,15 @@ import {
   SessionsPanel,
   SettingsPanel,
   SignalsPanel,
+  VerifyPanel,
 } from "./panels";
+import { useEvidenceStream } from "./useEvidenceStream";
 
 const PANEL_ICONS: Record<string, React.ReactNode> = {
   overview: <DashboardIcon />,
   evidence: <ActivityIcon />,
   graph: <LayersIcon />,
+  verify: <ServerIcon />,
   nodes: <ServerIcon />,
   sessions: <TerminalIcon />,
   alerts: <AlertIcon />,
@@ -44,6 +47,10 @@ export function CommandCenter() {
   const [activePanel, setActivePanel] = useState("overview");
   const [theme, setTheme] = useState<Theme>("dark");
   const palette = useCommandPalette();
+
+  // One SSE connection shared by every panel that needs the live run. Two
+  // panels each opening their own EventSource would run the real gates twice.
+  const stream = useEvidenceStream();
 
   const items = useMemo<CommandRailItem[]>(
     () => RAIL_ITEMS.map((item) => ({ ...item, icon: PANEL_ICONS[item.id] ?? null })),
@@ -138,7 +145,8 @@ export function CommandCenter() {
         <div className="celastyle-scroll min-h-0 flex-1 p-[var(--panel-gap)]">
           {activePanel === "overview" ? <OverviewPanel /> : null}
           {activePanel === "evidence" ? <EvidencePanel /> : null}
-          {activePanel === "graph" ? <GraphPanel /> : null}
+          {activePanel === "graph" ? <GraphPanel stream={stream} /> : null}
+          {activePanel === "verify" ? <VerifyPanel stream={stream} /> : null}
           {activePanel === "nodes" ? <NodesPanel /> : null}
           {activePanel === "sessions" ? <SessionsPanel /> : null}
           {activePanel === "alerts" ? <AlertsPanel /> : null}

@@ -1,5 +1,5 @@
 import type { GraphEdge, GraphNode } from "@celastyle/ui";
-import type { LiveRun } from "./useEvidenceStream";
+import type { GateState, LiveRun } from "./useEvidenceStream";
 
 /* =============================================================================
    Telemetry → graph projection
@@ -24,21 +24,46 @@ const GATE_LABEL: Record<string, string> = {
 
 export type Projection = { nodes: GraphNode[]; edges: GraphEdge[] };
 
+/**
+ * Collapse the wire's lifecycle states onto the graph's vocabulary.
+ *
+ * The stream has more states than the graph needs: a gate is "run" before the
+ * server has said anything, "running" while the command is live, and
+ * "resolved" for the instant between the command exiting and its result
+ * arriving. All three mean the same thing to a reader — the gate has not
+ * produced an answer yet — so the graph shows them as one in-flight state
+ * rather than flickering through three.
+ */
+function toStatus(outcome: GateState["outcome"]): GraphNode["status"] {
+  if (outcome === "pass" || outcome === "fail" || outcome === "skip") return outcome;
+  return "idle";
+}
+
 export function projectRun(run: LiveRun): Projection {
+  const scope = run.gates.scope;
+
   const nodes: GraphNode[] = [
     {
       id: "intent",
-      label: run.runId,
-      detail: run.scope,
-      status: "pass",
+      label: run.runId || "verifying",
+      detail: run.scope || run.intent,
+      /* The intent is not a gate and can never fail — it is the run's own
+         identity, so it is only "settled" once the run has produced a verdict.
+         Marking it passed up front would assert a conclusion before there is
+         one. */
+      status: run.verdict ? "pass" : "idle",
       kind: "intent",
       layer: 0,
     },
     {
       id: "constraint",
       label: "constraints",
-      detail: "policy scope",
-      status: run.gates.scope ? "pass" : "idle",
+      /* The scope constraint holds only when the scope gate actually passed.
+         Testing an object for truthiness counted any non-empty object — which
+         is every gate, running or not — so this node claimed the scope was
+         constrained while the scope gate was still unresolved. */
+      detail: scope?.value ?? "measuring scope",
+      status: toStatus(scope?.outcome ?? "run"),
       kind: "constraint",
       layer: 1,
     },
@@ -51,8 +76,8 @@ export function projectRun(run: LiveRun): Projection {
     nodes.push({
       id,
       label: GATE_LABEL[gate] ?? gate,
-      detail: state.value ?? state.detail,
-      status: state.outcome,
+      detail: state.detail ?? state.value,
+      status: toStatus(state.outcome),
       kind: "gate",
       layer: 2,
     });
@@ -85,7 +110,17 @@ export function projectRun(run: LiveRun): Projection {
     id: "deploy",
     label: "deploy",
     detail: run.deploy ? `production · ${run.deploy.outcome}` : "pending",
-    status: run.deploy ? "pass" : "idle",
+    /* Deploy is a consequence of the decision, so it mirrors it. Reporting
+       "pending" for a run that was explicitly REJECTED was misleading: the
+       deploy did not wait, it never happened. A rejected run must read as a
+       failed deploy, and a run still in flight must not claim either. */
+    status: !decided
+      ? "idle"
+      : run.deploy
+        ? "pass"
+        : run.verdict === "REJECTED"
+          ? "fail"
+          : "idle",
     kind: "deploy",
     layer: 4,
   });

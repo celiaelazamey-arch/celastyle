@@ -81,11 +81,34 @@ console.log("\n\x1b[1mTelemetry → graph projection\x1b[0m");
 
 {
   const { nodes } = projectRun(
-    makeRun({ deploy: { environment: "production", outcome: "pass" } }),
+    makeRun({
+      verdict: "VERIFIED",
+      deploy: { environment: "production", outcome: "pass" },
+    }),
   );
   const deploy = nodes.find((n) => n.id === "deploy");
   check("deploy reflects the environment", deploy.detail === "production · pass");
-  check("deploy reads passed once it lands", deploy.status === "pass");
+  check("deploy reads passed once a verified run lands one", deploy.status === "pass");
+}
+
+{
+  // The defect this guards: a deploy event with no verdict behind it must not
+  // paint the run green. Deployment is a consequence of a decision, so it
+  // cannot exist before the decision does.
+  const { nodes } = projectRun(
+    makeRun({ deploy: { environment: "production", outcome: "pass" } }),
+  );
+  check(
+    "a deploy with no verdict does not read as passed",
+    nodes.find((n) => n.id === "deploy").status !== "pass",
+  );
+}
+
+{
+  // A rejected run did not "wait" to deploy — it never deployed. Reporting
+  // "pending" would leave the panel looking like work still to come.
+  const { nodes } = projectRun(makeRun({ verdict: "REJECTED" }));
+  check("a rejected run shows a failed deploy", nodes.find((n) => n.id === "deploy").status === "fail");
 }
 
 {
@@ -111,7 +134,36 @@ console.log("\n\x1b[1mTelemetry → graph projection\x1b[0m");
   const layout = layoutGraph(nodes, projectRun(run).edges);
   // intent + constraint + 6 gates + decision + deploy = 10
   check("a fresh run still lays out completely", layout.nodes.length === 10, `got ${layout.nodes.length}`);
-  check("all gates render as running", nodes.filter((n) => n.kind === "gate").every((n) => n.status === "run"));
+  /* The wire has three in-flight states — "run" before the server has spoken,
+     "running" while a command is live, "resolved" in the instant before its
+     result lands. The graph collapses all three to "idle" so a reader sees one
+     consistent "not answered yet" state instead of three flickering ones. */
+  check(
+    "every unresolved gate reads as not-answered",
+    nodes.filter((n) => n.kind === "gate").every((n) => n.status === "idle"),
+  );
+}
+
+{
+  // The constraint node used to be `run.gates.scope ? "pass" : "idle"`, which
+  // is truthiness on an object: every gate object is truthy, running or not,
+  // so the scope read as constrained before it had been measured.
+  const { nodes } = projectRun(
+    makeRun({ gates: { ...makeRun().gates, scope: { outcome: "run" } } }),
+  );
+  check(
+    "an unresolved scope does not claim the constraint holds",
+    nodes.find((n) => n.id === "constraint").status !== "pass",
+  );
+}
+
+{
+  const { nodes } = projectRun(
+    makeRun({ gates: { ...makeRun().gates, scope: { outcome: "pass", value: "5 files" } } }),
+  );
+  const constraint = nodes.find((n) => n.id === "constraint");
+  check("a measured scope holds the constraint", constraint.status === "pass");
+  check("the constraint shows the measured scope", constraint.detail === "5 files", `got ${constraint.detail}`);
 }
 
 console.log(`\n${fail === 0 ? "\x1b[32m✅" : "\x1b[31m❌"} ${pass} passed, ${fail} failed\n`);

@@ -14,7 +14,17 @@ import {
 import { ALERTS, NODES, OVERVIEW_STATS, SESSIONS, SIGNALS } from "./data";
 import { EVIDENCE_SUMMARY, POLICY_RULES, RUNS } from "./evidence";
 import { projectRun } from "./projectRun";
-import { useEvidenceStream } from "./useEvidenceStream";
+import type {
+  LiveRun,
+  StreamStatus,
+} from "./useEvidenceStream";
+
+/** The shared telemetry subscription, passed down from the shell so only one
+ *  EventSource is opened regardless of which panels are mounted. */
+export type StreamResult = {
+  run: LiveRun | null;
+  status: StreamStatus;
+};
 
 /* =============================================================================
    Panels
@@ -271,8 +281,8 @@ export function EvidencePanel() {
    Graph panel — the live evidence DAG fed by the telemetry stream.
    ============================================================================= */
 
-export function GraphPanel() {
-  const { run, status } = useEvidenceStream();
+export function GraphPanel({ stream }: { stream: StreamResult }) {
+  const { run, status } = stream;
   const [selected, setSelected] = useState<string | null>(null);
 
   // The projection (live run → graph nodes/edges) is shared with its test via
@@ -340,6 +350,201 @@ export function GraphPanel() {
         ) : null}
       </div>
     </div>
+  );
+}
+
+/* =============================================================================
+   Verify panel — the real gate results for this repository.
+   ============================================================================= */
+
+export function VerifyPanel({ stream }: { stream: StreamResult }) {
+  const { run, status } = stream;
+
+  if (!run) {
+    return (
+      <div className="cc-panel flex h-full items-center justify-center">
+        <p className="font-mono text-xs text-[var(--text-muted)]">
+          running the real gates — the production build takes ~30s…
+        </p>
+      </div>
+    );
+  }
+
+  const gates = Object.entries(run.gates);
+  const summary = run.summary;
+
+  return (
+    <div className="flex min-h-0 flex-col gap-[var(--panel-gap)]">
+      {/* Verdict header */}
+      <div className="cc-panel">
+        <div className="cc-panel__header">
+          <h2 className="cc-panel__title">
+            {run.intent || "working tree"}
+          </h2>
+          <div className="celastyle-spacer" />
+          <span
+            className="celastyle-live-dot text-[var(--text-2xs)] text-ink-tertiary"
+            data-status={status}
+          >
+            {status}
+          </span>
+        </div>
+        <div className="cc-panel__body flex flex-wrap items-center gap-3">
+          <StatusBadge
+            status={
+              run.verdict === "VERIFIED"
+                ? "VERIFIED"
+                : run.verdict === "REJECTED"
+                  ? "REJECTED"
+                  : "PENDING"
+            }
+            label={run.verdict ?? "running"}
+            size="md"
+          />
+          {run.runId ? (
+            <span className="font-mono text-xs text-[var(--text-dim)]">
+              commit {run.runId}
+            </span>
+          ) : null}
+          {run.scope ? (
+            <span className="font-mono text-xs text-[var(--text-dim)]">
+              · {run.scope}
+            </span>
+          ) : null}
+          {summary ? (
+            <div className="ml-auto flex flex-wrap gap-4 font-mono text-[11px]">
+              {/* Every metric renders "unknown" when the command produced no
+                  readable number. Defaulting a missing count to 0 would paint
+                  a clean-looking panel for a run that never actually measured
+                  anything, which is the exact failure this panel exists to
+                  prevent. */}
+              <Metric
+                label="tests"
+                value={
+                  summary.testsPassed !== null && summary.testsTotal !== null
+                    ? `${summary.testsPassed}/${summary.testsTotal}`
+                    : "unknown"
+                }
+                tone={
+                  summary.testsFailed === null
+                    ? "idle"
+                    : summary.testsFailed > 0
+                      ? "fail"
+                      : "pass"
+                }
+              />
+              <Metric
+                label="vulns"
+                value={
+                  summary.vulnerabilities === null
+                    ? "unknown"
+                    : String(summary.vulnerabilities)
+                }
+                tone={
+                  summary.vulnerabilities === null
+                    ? "idle"
+                    : summary.vulnerabilities > 0
+                      ? "fail"
+                      : "pass"
+                }
+              />
+              <Metric
+                label="build"
+                value={
+                  summary.buildSeconds === null
+                    ? "unknown"
+                    : `${summary.buildSeconds}s`
+                }
+                tone={summary.buildSeconds === null ? "idle" : "pass"}
+              />
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Per-gate real results */}
+      <div className="cc-panel flex-1">
+        <div className="cc-panel__header">
+          <h2 className="cc-panel__title">Gate results</h2>
+          <div className="celastyle-spacer" />
+          <span className="celastyle-label">live from the repository</span>
+        </div>
+        <div className="cc-panel__body flex flex-col gap-1">
+          {gates.map(([id, gate]) => (
+            <div
+              key={id}
+              data-outcome={gate.outcome}
+              className="flex items-center gap-3 rounded border border-[var(--border-subtle)] bg-[var(--bg-primary)] px-3 py-2"
+            >
+              <span
+                className={`flex h-4 w-4 shrink-0 items-center justify-center rounded text-[10px] font-bold ${
+                  gate.outcome === "pass"
+                    ? "bg-[var(--status-pass-alpha-10)] text-[var(--status-pass)]"
+                    : gate.outcome === "fail"
+                      ? "bg-[var(--status-fail-alpha-10)] text-[var(--status-fail)]"
+                      : "bg-[var(--accent-lime-alpha-10)] text-[var(--accent-lime)]"
+                }`}
+                aria-hidden="true"
+              >
+                {gate.outcome === "pass"
+                  ? "✓"
+                  : gate.outcome === "fail"
+                    ? "✕"
+                    : "◐"}
+              </span>
+              <span className="min-w-[70px] text-xs font-medium text-[var(--text-secondary)]">
+                {id}
+              </span>
+              {gate.value ? (
+                <span className="font-mono text-[11px] tabular-nums text-[var(--text-dim)]">
+                  {gate.value}
+                </span>
+              ) : null}
+              {gate.detail ? (
+                <span className="min-w-0 truncate text-[11px] text-[var(--text-dim)]">
+                  {gate.detail}
+                </span>
+              ) : null}
+              <div className="celastyle-spacer" />
+              {gate.ms !== undefined ? (
+                <span className="shrink-0 font-mono text-[10px] tabular-nums text-[var(--text-muted)]">
+                  {(gate.ms / 1000).toFixed(1)}s
+                </span>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Metric({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  /* "idle" means the number was never measured. It gets its own tone so an
+     unmeasured metric cannot be mistaken for a measured-and-clean one. */
+  tone?: "pass" | "fail" | "idle";
+}) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className="text-[var(--text-dim)]">{label}</span>
+      <span
+        className={
+          tone === "fail"
+            ? "text-[var(--status-fail)]"
+            : tone === "pass"
+              ? "text-[var(--status-pass)]"
+              : "text-[var(--text-dim)]"
+        }
+      >
+        {value}
+      </span>
+    </span>
   );
 }
 

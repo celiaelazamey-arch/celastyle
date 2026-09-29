@@ -17,11 +17,12 @@ import { fileURLToPath } from "node:url";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 const pkgRoot = resolve(here, "..");
-const appRoot = resolve(pkgRoot, "../../apps/command-center/app/workspace");
+const appWorkspace = resolve(pkgRoot, "../../apps/command-center/app/workspace");
+const appLib = resolve(pkgRoot, "../../apps/command-center/app/lib");
 
-// 1 — Compile the component package, and the app's pure projection module
-//     (the telemetry test drives the same function the panel uses, so it has
-//     to be compiled rather than reimplemented in the test).
+// 1 — Compile the component package, and the app's pure modules the telemetry
+//     and verdict tests drive (they import the same functions the app does, so
+//     they have to be compiled rather than reimplemented in the test).
 execFileSync(
   process.platform === "win32" ? "npx.cmd" : "npx",
   ["tsc", "-p", join(here, "tsconfig.json")],
@@ -32,7 +33,31 @@ execFileSync(
   process.platform === "win32" ? "npx.cmd" : "npx",
   [
     "tsc",
-    join(appRoot, "projectRun.ts"),
+    join(appWorkspace, "projectRun.ts"),
+    "--outDir",
+    join(pkgRoot, ".test-build-workspace"),
+    // projectRun and verify import types from @celastyle/ui, which resolves
+    // to the package's .tsx source, so JSX must be enabled or tsc refuses the
+    // transitive .tsx modules.
+    "--jsx",
+    "react-jsx",
+    "--module",
+    "ESNext",
+    "--target",
+    "ES2022",
+    "--moduleResolution",
+    "bundler",
+    "--skipLibCheck",
+  ],
+  { cwd: appWorkspace, stdio: "inherit" },
+);
+
+// verify.ts pulls in node:child_process, so it is compiled on its own.
+execFileSync(
+  process.platform === "win32" ? "npx.cmd" : "npx",
+  [
+    "tsc",
+    join(appLib, "verify.ts"),
     "--outDir",
     join(pkgRoot, ".test-build-workspace"),
     "--module",
@@ -41,20 +66,18 @@ execFileSync(
     "ES2022",
     "--moduleResolution",
     "bundler",
-    // projectRun imports types from @celastyle/ui, which resolves to the
-    // package's .tsx source, so JSX must be enabled or tsc refuses the
-    // transitive .tsx modules.
-    "--jsx",
-    "react-jsx",
     "--skipLibCheck",
   ],
-  { cwd: appRoot, stdio: "inherit" },
+  { cwd: appLib, stdio: "inherit" },
 );
 
 const targets = [
   { dir: join(pkgRoot, ".test-build"), label: ".test-build" },
   { dir: join(pkgRoot, ".test-build-workspace"), label: ".test-build-workspace" },
 ];
+
+/* verify.ts is compiled separately, so it lands under lib/. The verdict test
+   imports it from there directly. */
 
 let stripped = 0;
 let fixed = 0;

@@ -37,3 +37,7 @@ coverage/
 
 # Arena
 .arena/
+
+# Verification build output — kept separate so a gate build never corrupts a
+# running dev server (see apps/command-center/next.config.mjs).
+apps/command-center/.next-verify/
