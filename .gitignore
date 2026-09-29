@@ -41,3 +41,8 @@ coverage/
 # Verification build output — kept separate so a gate build never corrupts a
 # running dev server (see apps/command-center/next.config.mjs).
 apps/command-center/.next-verify/
+
+# Runtime evidence store. Written by the agent session and appended to on
+every run; committing it would put an ever-growing hash chain in the history
+# and make the working tree dirty for reasons unrelated to any change.
+apps/command-center/.runtime/

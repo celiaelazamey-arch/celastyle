@@ -216,7 +216,12 @@ export function readFailure(ledger: EventLedger, stepId: string): FailureSignal 
  * rollback handle that is the only evidence the first one exists.
  */
 export function isReplannable(status: string): boolean {
-  return status === "denied" || status === "execution_failed" || status === "verification_failed";
+  return (
+    status === "denied" ||
+    status === "execution_refused" ||
+    status === "execution_failed" ||
+    status === "verification_failed"
+  );
 }
 
 /* ── replanning ─────────────────────────────────────────────────────────── */
@@ -463,7 +468,7 @@ export async function runPlan(initial: Plan, deps: RunDeps): Promise<PlanOutcome
           completed,
           failures,
           replans,
-          status: result.status === "denied" ? "denied" : "failed",
+          status: result.status === "denied" || result.status === "execution_refused" ? "denied" : "failed",
           reason: `step "${node.id}" ended as ${result.status}${
             result.authorityReason ? `: ${result.authorityReason}` : ""
           }`,
@@ -494,7 +499,7 @@ export async function runPlan(initial: Plan, deps: RunDeps): Promise<PlanOutcome
           completed,
           failures,
           replans,
-          status: result.status === "denied" ? "denied" : "failed",
+          status: result.status === "denied" || result.status === "execution_refused" ? "denied" : "failed",
           reason: `step "${node.id}" failed (${result.status}) and re-planning stopped: ${why}`,
         };
       }

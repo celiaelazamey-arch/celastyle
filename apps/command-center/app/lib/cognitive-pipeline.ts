@@ -62,7 +62,15 @@ export type ProposedStep = {
 
 /** The isolated arm. Cannot be constructed here; supplied by the host. */
 export type Executor = {
-  run(action: string, payload: unknown): Promise<unknown>;
+  /**
+   * Run one action. The skill is part of the call and not optional context:
+   * it carries `allowed_directories`, which is what confines the write, and
+   * `timeout_ms`, which is the child's budget. An executor invoked without
+   * it has no scope to enforce, and the safe reading of "no scope" is
+   * refusing every path — so omitting this parameter is not a loose
+   * default, it is a total denial that looks like a passing test.
+   */
+  run(action: string, payload: unknown, skill?: SkillMeta): Promise<unknown>;
   /** Undo a completed run. May itself fail; that is not exceptional. */
   rollback(step: ProposedStep): Promise<void>;
   /**
@@ -86,6 +94,11 @@ export type StepStatus =
   | "authorized_and_verified"
   | "denied"
   | "execution_failed"
+  /** The executor declined: the path was outside scope, the tool refused, or
+   *  the child misbehaved. Nothing was written, so there is nothing to roll
+   *  back and the workspace is exactly as it was. Distinct from
+   *  `execution_failed`, which is a step that started and did not finish. */
+  | "execution_refused"
   | "verification_failed"
   /** Verification failed AND the undo failed. The workspace is now unknown. */
   | "rollback_failed"
@@ -128,6 +141,29 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * Did the executor decline rather than fail?
+ *
+ * Recognised structurally — an object carrying a `failure` and an `ok` of
+ * false — rather than by importing the executor's own type, so the pipeline
+ * stays independent of the module that implements it. A duck-typed check
+ * that accepts any well-formed refusal keeps a second implementation, or a
+ * future one, from having to be taught about this contract explicitly.
+ */
+function isRefusal(
+  output: unknown,
+): output is { ok: false; error?: string; failure: { kind: string; reason: string } } {
+  if (!output || typeof output !== "object") return false;
+  const candidate = output as { ok?: unknown; failure?: { kind?: unknown; reason?: unknown } };
+  return (
+    candidate.ok === false &&
+    typeof candidate.failure === "object" &&
+    candidate.failure !== null &&
+    typeof candidate.failure.kind === "string" &&
+    typeof candidate.failure.reason === "string"
+  );
+}
+
 export async function executeCognitiveStep(
   step: ProposedStep,
   deps: PipelineDeps,
@@ -168,7 +204,7 @@ export async function executeCognitiveStep(
      must not be distinguishable from a crash to the caller. */
   let executionOutput: unknown;
   try {
-    executionOutput = await executor.run(step.action, step.payload);
+    executionOutput = await executor.run(step.action, step.payload, step.skill);
   } catch (error) {
     const entry = ledger.append({
       action: step.action,
@@ -185,6 +221,42 @@ export async function executeCognitiveStep(
       stepId: step.id,
       action: step.action,
       executionOutput: undefined,
+      ledgerEntry: entry,
+    };
+  }
+
+  /* A refusal is not a throw, and the difference decides what happens next.
+
+     The executor declines a confined path by *returning* a structured
+     refusal rather than raising: nothing was attempted, so there is no
+     crash to report and no half-finished work. But a returned refusal used
+     to flow on into verification, which failed, which sent the pipeline
+     looking for something to roll back — and there was nothing, because no
+     write ever happened.
+
+     The result was `rollback_failed` for a step that had not touched the
+     disk. That is the worst possible report: it declares the workspace
+     unknown when it is known to be untouched, and it is the one status
+     that halts the whole run. A refusal has to be recognised as a refusal
+     here, or the loop panics over a write it correctly declined to make. */
+  if (isRefusal(executionOutput)) {
+    const entry = ledger.append({
+      action: step.action,
+      payload: {
+        stepId: step.id,
+        outcome: "execution_refused",
+        reason: executionOutput.error ?? executionOutput.failure.reason,
+        kind: executionOutput.failure.kind,
+        proposedPayload: step.payload,
+      },
+      verifier_result: "failed",
+    });
+    return {
+      status: "execution_refused",
+      stepId: step.id,
+      action: step.action,
+      executionOutput,
+      authorityReason: executionOutput.error ?? executionOutput.failure.reason,
       ledgerEntry: entry,
     };
   }

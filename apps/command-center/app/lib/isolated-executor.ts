@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
 import { access, realpath } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { constants as FS } from "node:fs";
 import { isAbsolute, relative, resolve, dirname, basename, join } from "node:path";
 import { isInside, type SkillMeta } from "./execution-authority";
@@ -83,6 +85,44 @@ const DEFAULTS = {
   timeoutMs: 10_000,
   maxOutputBytes: 256 * 1024,
 };
+
+/**
+ * Find the worker script.
+ *
+ * Not a bare `new URL("./tools/worker.mjs", import.meta.url)`. That resolves
+ * beside the *compiled* module, and nothing guarantees the worker is emitted
+ * there: this file is bundled by Next into a chunk directory, and in the
+ * test build it lands in a directory with no `tools/` at all. The path would
+ * point at nothing, the child would fail to start, and the symptom would
+ * arrive two layers away as a protocol error — or, worse, as a
+ * verification failure on a step that never ran.
+ *
+ * The worker is a real file with a real path, so it is found by looking for
+ * it rather than by assuming where a compiler put it. The first candidate
+ * that exists wins; if none does, the beside-the-source guess is returned so
+ * the failure names a path a person can go and look at.
+ */
+function defaultWorkerPath(): string {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    /* Beside the source, which is right when running from source. */
+    resolve(here, "tools/worker.mjs"),
+    /* Beside the bundle, which is right when a build copied it along. */
+    resolve(here, "../tools/worker.mjs"),
+    resolve(here, "../../app/lib/tools/worker.mjs"),
+    /* Walking up to the app root, which is where the source actually lives
+       when this module is bundled or transpiled elsewhere. */
+    resolve(here, "../../../apps/command-center/app/lib/tools/worker.mjs"),
+  ];
+  for (const candidate of candidates) {
+    try {
+      if (existsSync(candidate)) return candidate;
+    } catch {
+      /* unreadable: try the next one */
+    }
+  }
+  return candidates[0]!;
+}
 
 /* ── child process supervision ─────────────────────────────────────────── */
 
@@ -258,8 +298,7 @@ export class IsolatedExecutor {
 
   constructor(options: ExecutorOptions = {}) {
     this.execPath = options.execPath ?? process.execPath;
-    this.workerPath =
-      options.workerPath ?? new URL("./tools/worker.mjs", import.meta.url).pathname;
+    this.workerPath = options.workerPath ?? defaultWorkerPath();
     this.defaultTimeoutMs = options.defaultTimeoutMs ?? DEFAULTS.timeoutMs;
     this.maxOutputBytes = options.maxOutputBytes ?? DEFAULTS.maxOutputBytes;
   }
