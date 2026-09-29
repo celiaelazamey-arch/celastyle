@@ -59,6 +59,8 @@ for (const entry of [
   "execution-authority.ts",
   "event-ledger.ts",
   "cognitive-pipeline.ts",
+  "policy-engine.ts",
+  "planner.ts",
   "isolated-executor.ts",
 ]) {
   execFileSync(
