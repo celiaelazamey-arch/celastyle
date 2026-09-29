@@ -188,5 +188,34 @@ console.log("\n\x1b[1mTelemetry → graph projection\x1b[0m");
   check("a review gate does not violate the path", edges.every((e) => e.violated === false));
 }
 
+{
+  /* A1 focuses the graph on whichever gates the rail flags. That only works if
+     a flagged gate is addressable as a real node, so the identifier the UI
+     builds ("gate-" + id) has to actually match a node in the projection.
+     A mismatch would fail silently: the button would set a selection that
+     matches nothing and the reviewer would see no focus at all. */
+  const run = makeRun({
+    gates: { ...makeRun().gates, security: { outcome: "fail", value: "3 vuln" } },
+  });
+  const { nodes } = projectRun(run);
+  const flagged = "security";
+  const attentionId = `gate-${flagged}`;
+  const node = nodes.find((n) => n.id === attentionId);
+  check("a flagged gate resolves to a real graph node", node !== undefined, attentionId);
+  check("the flagged node carries the failure", node.status === "fail", `got ${node?.status}`);
+}
+
+{
+  // And the inverse — the happy run must produce nothing to focus, or the
+  // graph would point at an arbitrary node on every clean run.
+  const run = makeRun({
+    gates: Object.fromEntries(
+      Object.entries(makeRun().gates).map(([id, g]) => [id, { ...g, outcome: "pass" }]),
+    ),
+  });
+  const flagged = Object.entries(run.gates).filter(([, g]) => g.outcome === "fail" || g.outcome === "review");
+  check("a fully passing run flags no gate to focus", flagged.length === 0, `got ${flagged.length}`);
+}
+
 console.log(`\n${fail === 0 ? "\x1b[32m✅" : "\x1b[31m❌"} ${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

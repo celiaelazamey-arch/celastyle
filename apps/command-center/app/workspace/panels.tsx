@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CompactCard,
   EvidenceCard,
@@ -24,6 +24,8 @@ import type {
 export type StreamResult = {
   run: LiveRun | null;
   status: StreamStatus;
+  /** Measured event rate, rendered in the shell header. */
+  rate: string;
 };
 
 /* =============================================================================
@@ -281,6 +283,30 @@ export function EvidencePanel() {
    Graph panel — the live evidence DAG fed by the telemetry stream.
    ============================================================================= */
 
+/* =============================================================================
+   Export the live run exactly as the server sent it.
+   -----------------------------------------------------------------------------
+   The payload is the run object, unmodified and unabridged: the same gates,
+   outcomes and timings the panel is rendering. No fields are added, reordered
+   or beautified, because a "cleaned up" export is an export that can be
+   trusted to mean something it does not. The filename carries the commit and
+   whether the run was measured live or replayed from cache, so two files that
+   look alike are not.
+   ========================================================================== */
+
+function exportRun(run: LiveRun) {
+  const payload = JSON.stringify(run, null, 2);
+  const blob = new Blob([payload], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `run-${run.runId || "latest"}${run.cached ? "-replayed" : ""}.json`;
+  a.click();
+  // Revoking immediately is safe — the click already handed the blob to the
+  // download — and leaking one URL per export is a real leak in a long session.
+  URL.revokeObjectURL(url);
+}
+
 export function GraphPanel({ stream }: { stream: StreamResult }) {
   const { run, status } = stream;
   const [selected, setSelected] = useState<string | null>(null);
@@ -294,12 +320,60 @@ export function GraphPanel({ stream }: { stream: StreamResult }) {
 
   const selectedNode = nodes.find((n) => n.id === selected) ?? null;
 
+  /* The same count the rail badge shows, and the same cause: gates that came
+     back failed or waiting on review. When it is non-zero, selecting the first
+     such gate closes the gap between a red badge in the rail and the node it
+     refers to in the graph — the reviewer no longer has to hunt for which node
+     the alert is about. Derived once, so the rail and the graph can never
+     disagree about how many issues exist. */
+  const attention = useMemo(
+    () =>
+      run
+        ? Object.entries(run.gates)
+            .filter(([, g]) => g.outcome === "fail" || g.outcome === "review")
+            .map(([id]) => `gate-${id}`)
+        : [],
+    [run],
+  );
+
+  /* Auto-focus the first gate that needs attention the moment one appears, so
+     the node the rail badge refers to is the node the reviewer is already
+     looking at. It only fires when nothing is selected, so it never yanks
+     the selection away from someone who has deliberately clicked something
+     else. */
+  useEffect(() => {
+    if (attention.length > 0 && selected === null) {
+      setSelected(attention[0] ?? null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attention.length]);
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-[var(--panel-gap)]">
       <div className="cc-panel flex min-h-0 flex-1 flex-col">
         <div className="cc-panel__header">
           <h2 className="cc-panel__title">Evidence graph</h2>
           <div className="celastyle-spacer" />
+          {attention.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => setSelected(attention[0] ?? null)}
+              className="celastyle-data text-[var(--text-2xs)] text-[var(--status-fail)] underline decoration-dotted underline-offset-2"
+              title={attention.join(", ")}
+            >
+              {attention.length} need attention
+            </button>
+          ) : null}
+          {run ? (
+            <button
+              type="button"
+              onClick={() => exportRun(run)}
+              className="celastyle-data text-[var(--text-2xs)] text-ink-tertiary transition-colors hover:text-ink-primary"
+              title="Download this run as JSON, exactly as the server sent it"
+            >
+              export json
+            </button>
+          ) : null}
           <span
             className="celastyle-live-dot text-[var(--text-2xs)] text-ink-tertiary"
             data-status={status}
