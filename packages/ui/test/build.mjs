@@ -54,7 +54,7 @@ execFileSync(
 
 // The app's server-side modules pull in node builtins, so they are compiled
 // on their own rather than through the package's tsconfig.
-for (const entry of ["verify.ts", "execution-authority.ts"]) {
+for (const entry of ["verify.ts", "execution-authority.ts", "event-ledger.ts"]) {
   execFileSync(
     process.platform === "win32" ? "npx.cmd" : "npx",
     [
