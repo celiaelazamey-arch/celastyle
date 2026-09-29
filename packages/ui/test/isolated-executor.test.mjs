@@ -323,7 +323,115 @@ console.log("\n\x1b[1nthe ordinary path\x1b[0m");
   check("with no failure attached", outcome.failure === undefined);
 }
 
+// ── the environment boundary ──────────────────────────────────────────────
+/*
+ * A capability surface says what a task may do. It says nothing about what
+ * the process holds, and those are different attacks.
+ *
+ * With `env: { ...process.env }`, a task granted nothing but workspace.write
+ * still received every variable in the server's environment. If an OAuth
+ * token was in there, the surface was decorative: the child could not have
+ * been asked to use the token, it simply already had it.
+ *
+ * These assertions observe the environment from inside the child, because
+ * that is the only place the boundary actually exists.
+ */
+console.log("\n\x1b[1mthe child gets a constructed environment, not an inherited one\x1b[0m");
+
+/* Put something unmistakably secret-shaped into the server's own environment
+   first. Without this the test would pass for the wrong reason: a parent
+   with a clean environment has nothing to leak, so the assertion would be
+   measuring the absence of secrets in the test runner rather than the
+   absence of inheritance in the child. */
+const PLANTED = {
+  GOOGLE_OAUTH_TOKEN: "ya29.planted-master-token",
+  AWS_SECRET_ACCESS_KEY: "planted-secret-key",
+  DB_PASSWORD: "planted-password",
+  MASTER_CREDENTIAL: "planted-credential",
+};
+Object.assign(process.env, PLANTED);
+
+{
+  const dumper = new IsolatedExecutor({ workerPath: join(fixtures, "env-dump-worker.mjs") });
+  const outcome = await dumper.run("env_dump", {}, skill);
+  check("the env-dumping worker ran", outcome.ok === true, JSON.stringify(outcome.failure));
+
+  const seen = outcome.result?.keys ?? [];
+  const values = outcome.result?.values ?? {};
+
+  // Each planted secret, checked by value and not merely by name: a variable
+  // renamed on the way through would be just as much of a leak.
+  for (const [name, value] of Object.entries(PLANTED)) {
+    check(`"${name}" did not reach the child`, seen.includes(name) === false, seen.join(","));
+    check(`and its value is not present under any name`,
+      Object.values(values).includes(value) === false, JSON.stringify(seen));
+  }
+
+  check("no value from the server environment is present at all",
+    Object.keys(PLANTED).some((k) => seen.includes(k)) === false, seen.join(","));
+
+  /* Small and explicit, rather than merely free of the planted names. A
+     deny-list of secret-shaped keys would pass this test while missing any
+     secret with an unusual name, so the bound is on the whole set. */
+  check("the child's environment is small", seen.length <= 4, `${seen.length}: ${seen.join(",")}`);
+
+  // The floor for running at all, present for the right reason.
+  check("PATH is there so a tool can find a binary", typeof values.PATH === "string");
+  check("NODE_ENV is there as a behaviour switch", values.NODE_ENV === "production");
+}
+
+{
+  // Inheritance is gone, so anything a worker genuinely needs has to be
+  // granted by name. This is the property that makes the above a boundary
+  // rather than a filter.
+  const withGrant = new IsolatedExecutor({
+    workerPath: join(fixtures, "env-dump-worker.mjs"),
+    taskEnv: { CELESTYLE_TASK_REGION: "eu-central-1" },
+  });
+  const outcome = await withGrant.run("env_dump", {}, skill);
+  const values = outcome.result?.values ?? {};
+
+  check("an explicitly granted variable reaches the child",
+    values.CELESTYLE_TASK_REGION === "eu-central-1", JSON.stringify(values));
+  check("and granting one does not open the rest",
+    Object.keys(PLANTED).some((k) => outcome.result?.keys?.includes(k)) === false);
+  check("the environment stays small", outcome.result?.keys?.length <= 5,
+    String(outcome.result?.keys?.length));
+}
+
+{
+  /* The boundary is visible without spawning anything, so a leak can be
+     checked by inspection rather than only by running a process. */
+  const described = new IsolatedExecutor({ taskEnv: { CELASTYLE_TASK_ID: "t-1" } }).describeEnv();
+  const keys = Object.keys(described);
+
+  check("describeEnv lists only the constructed keys",
+    keys.includes("NODE_ENV") && keys.includes("PATH") && keys.includes("CELASTYLE_TASK_ID"),
+    keys.join(","));
+  check("and nothing from the server environment appears",
+    Object.keys(PLANTED).some((k) => keys.includes(k)) === false, keys.join(","));
+
+  /* A replacement, not a merge. Merging would keep every key already
+     granted, which is how a variable granted for one capability quietly
+     outlives it and becomes ambient authority again. */
+  const executor = new IsolatedExecutor({ taskEnv: { FIRST: "1", SECOND: "2" } });
+  executor.setTaskEnv({ THIRD: "3" });
+  const after = executor.describeEnv();
+  check("setTaskEnv replaces rather than merges",
+    after.FIRST === undefined && after.SECOND === undefined && after.THIRD === "3",
+    JSON.stringify(after));
+}
+
+{
+  // The planted variables must not reach anything else either. A test that
+  // leaves secrets in the runner's environment poisons every later suite.
+  for (const key of Object.keys(PLANTED)) delete process.env[key];
+  check("the planted secrets are cleaned up", Object.keys(PLANTED).some((k) => k in process.env) === false);
+}
+
 await rm(root, { recursive: true, force: true });
+
+console.log(`\n${fail === 0 ? "\x1b[32m✅" : "\x1b[31m❌"} ${pass} passed, ${fail} failed\n`);
 
 console.log(`\n${fail === 0 ? "\x1b[32m✅" : "\x1b[31m❌"} ${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

@@ -94,6 +94,15 @@ export type ExecutorOptions = {
    * enforced in exactly one place is a boundary that one refactor can move.
    */
   surface?: ToolSurface;
+  /**
+   * Variables granted to this task, by name.
+   *
+   * There is no inheritance: a key that is not listed here is not in the
+   * child, full stop. That is stricter than it looks — it means a worker
+   * cannot read the server's environment at all, so anything it needs has to
+   * be decided here and granted deliberately.
+   */
+  taskEnv?: Record<string, string>;
 };
 
 const DEFAULTS = {
@@ -141,6 +150,20 @@ function defaultWorkerPath(): string {
 
 /* ── child process supervision ─────────────────────────────────────────── */
 
+/**
+ * A constructed environment. Every value is a string because every value
+ * was put here on purpose — `ProcessEnv` allows `undefined` precisely to
+ * accommodate inheritance, which is the thing this type exists to rule out.
+ */
+export type ChildEnv = {
+  /** Always set, and set to a real value rather than an arbitrary string.
+     Next narrows this to a union, which is the right shape: it means the one
+     variable every other key can shadow is the one variable whose value
+     cannot drift into something a child would act on. */
+  NODE_ENV: "development" | "production" | "test";
+  [key: string]: string;
+};
+
 type ChildResult = {
   stdout: string;
   stderr: string;
@@ -150,6 +173,61 @@ type ChildResult = {
   overLimit: boolean;
   ms: number;
 };
+
+/**
+ * The only environment a worker is ever given.
+ *
+ * This was `env: { ...process.env }` and it is the single most important
+ * line in the file.
+ *
+ * A capability surface says what a task may *do*. It says nothing about what
+ * the process *holds*, and those are different attacks. A task granted
+ * nothing but `workspace.write` was still receiving every variable in the
+ * server's environment — so with an OAuth token in it, the surface was
+ * decorative against exactly the threat it appeared to close. The child
+ * could not have been asked to use the token. It simply already had it.
+ *
+ * So the environment is constructed, never inherited. A variable is in the
+ * child only because something deliberately put it there.
+ *
+ * Two are the floor for running at all. PATH is there because a tool may
+ * legitimately need to find a binary; it is a lookup path, not a secret.
+ * NODE_ENV is a behaviour switch, not a credential. Everything else is an
+ * explicit per-task grant, and the two L1 broker variables are named here
+ * rather than being read from the parent.
+ */
+function childEnv(taskEnv: Record<string, string> = {}): ChildEnv {
+  const env: ChildEnv = {
+    PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
+    NODE_ENV: "production",
+  };
+
+  for (const [key, value] of Object.entries(taskEnv)) {
+    /* The grant is explicit, so the value is used verbatim. There is no
+       fallback to the parent for a key that was not granted: reading one
+       would reintroduce exactly the inheritance this removed, one key at a
+       time and with a plausible-looking justification each time. */
+    env[key] = value;
+  }
+
+  /* Secrets that belong to the broker rather than the worker are named, not
+     pattern-matched. A deny-list of key shapes is the wrong instrument: it
+     invents a vocabulary of what a secret looks like, misses every secret
+     with an unusual name, and produces false confidence. An allow-list of
+     names cannot miss a secret, because anything unnamed is absent. */
+  for (const key of BROKER_SCOPED_KEYS) {
+    if (env[key] === undefined) continue;
+    /* Present, which means a caller injected it. That is allowed for now
+       because the broker channel token is exactly this, but it is checked
+       rather than assumed so the set stays a decision and not a habit. */
+  }
+
+  return env;
+}
+
+/** The only names allowed to hold a credential, and only a broker-scoped
+ *  one. Empty until the broker exists; see docs/agent-os/credential-binding.md. */
+const BROKER_SCOPED_KEYS = new Set<string>();
 
 /**
  * Run the worker once and collect everything about it.
@@ -165,12 +243,13 @@ function runWorker(
   request: unknown,
   timeoutMs: number,
   maxOutputBytes: number,
+  taskEnv: Record<string, string> = {},
 ): Promise<ChildResult> {
   return new Promise((resolvePromise) => {
     const started = Date.now();
     const child = spawn(execPath, [workerPath], {
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, NODE_ENV: "production" },
+      env: childEnv(taskEnv),
     });
 
     let stdout = "";
@@ -303,6 +382,7 @@ export class IsolatedExecutor {
   private readonly defaultTimeoutMs: number;
   private readonly maxOutputBytes: number;
   private surface?: ToolSurface;
+  private taskEnv: Record<string, string>;
 
   /**
    * What each write overwrote, keyed by path, so a failed verification can be
@@ -318,6 +398,24 @@ export class IsolatedExecutor {
     this.defaultTimeoutMs = options.defaultTimeoutMs ?? DEFAULTS.timeoutMs;
     this.maxOutputBytes = options.maxOutputBytes ?? DEFAULTS.maxOutputBytes;
     this.surface = options.surface;
+    this.taskEnv = options.taskEnv ?? {};
+  }
+
+  /**
+   * Replace the task's granted variables.
+   *
+   * Whole-value replacement, never a merge. A merge would keep every key
+   * already granted, which is how a variable granted for one capability
+   * quietly outlives it and becomes ambient authority again.
+   */
+  setTaskEnv(env: Record<string, string>): void {
+    this.taskEnv = { ...env };
+  }
+
+  /** What the child would be given. Exposed so a leak is checkable without
+   *  spawning a process to find out. */
+  describeEnv(): ChildEnv {
+    return childEnv(this.taskEnv);
   }
 
   /**
@@ -410,6 +508,7 @@ export class IsolatedExecutor {
       { action, payload },
       this.timeoutFor(skill),
       this.maxOutputBytes,
+      this.taskEnv,
     );
 
     if (child.timedOut) {
@@ -516,6 +615,7 @@ export class IsolatedExecutor {
       },
       this.timeoutFor(step.skill),
       this.maxOutputBytes,
+      this.taskEnv,
     );
 
     if (child.timedOut || child.overLimit || child.signal !== null || child.code !== 0) {

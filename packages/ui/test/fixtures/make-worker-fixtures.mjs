@@ -82,6 +82,20 @@ const fixtures = {
     });
   `,
 
+  // Reports its own environment. Used to prove the child is given a
+  // constructed environment rather than an inherited one — the only way to
+  // observe the boundary is from inside the process that lives behind it.
+  "env-dump-worker.mjs": `
+    process.stdin.resume();
+    process.stdin.on("end", () => {
+      process.stdout.write(JSON.stringify({
+        ok: true,
+        keys: Object.keys(process.env).sort(),
+        values: process.env,
+      }) + "\\n");
+    });
+  `,
+
   // Returns something that is not JSON.
   "garbage-worker.mjs": `
     process.stdin.resume();
