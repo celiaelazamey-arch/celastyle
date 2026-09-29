@@ -217,17 +217,45 @@ function childEnv(taskEnv: Record<string, string> = {}): ChildEnv {
      names cannot miss a secret, because anything unnamed is absent. */
   for (const key of BROKER_SCOPED_KEYS) {
     if (env[key] === undefined) continue;
-    /* Present, which means a caller injected it. That is allowed for now
-       because the broker channel token is exactly this, but it is checked
-       rather than assumed so the set stays a decision and not a habit. */
+    /* Present, which means a caller injected it. The broker channel token is
+       exactly this, so presence is expected — but it is checked rather than
+       assumed, because the set below is a decision about what may cross the
+       boundary and a set nobody re-reads is just a habit. */
+    if (!BROKER_TOKEN_SHAPES[key]) {
+      throw new Error(
+        `refusing to pass ${key}: it is in BROKER_SCOPED_KEYS with no shape to verify it against`,
+      );
+    }
+    if (!BROKER_TOKEN_SHAPES[key](env[key]!)) {
+      throw new Error(
+        `refusing to pass ${key}: the value is not a well-formed broker channel token`,
+      );
+    }
   }
 
   return env;
 }
 
-/** The only names allowed to hold a credential, and only a broker-scoped
- *  one. Empty until the broker exists; see docs/agent-os/credential-binding.md. */
-const BROKER_SCOPED_KEYS = new Set<string>();
+/**
+ * The only names allowed to cross into the worker, and only broker-scoped
+ * values of them.
+ *
+ * Both entries are addresses and capabilities, not secrets. The token says
+ * which session and epoch a worker may speak for; it cannot be exchanged for
+ * a credential, because the broker never releases credentials to anyone.
+ * That is the whole point: the worker holds something that identifies it, and
+ * nothing that can be spent.
+ */
+const BROKER_SCOPED_KEYS = new Set<string>(["CELESTYLE_BROKER_SOCKET", "CELESTYLE_CHANNEL_TOKEN"]);
+
+/** A malformed value is a programming error, not a secret to be tolerated.
+ *  A value that fails its shape is refused rather than passed along, so a
+ *  truncated or substituted channel token surfaces here instead of becoming
+ *  a confusing rejection from the broker later. */
+const BROKER_TOKEN_SHAPES: Record<string, (value: string) => boolean> = {
+  CELESTYLE_BROKER_SOCKET: (value) => value.length > 0 && value.length < 4096,
+  CELESTYLE_CHANNEL_TOKEN: (value) => /^[A-Za-z0-9_-]+\.\d+\.[0-9a-f]{64}$/.test(value),
+};
 
 /**
  * Run the worker once and collect everything about it.

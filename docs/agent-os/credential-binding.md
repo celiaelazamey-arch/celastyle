@@ -358,3 +358,83 @@ read-only task requesting it gets a working token and the lot.
 Tokens are distinguished from capabilities that need none: `requiresToken`
 defaults to true, so a forgotten binding and a genuinely local capability
 cannot look alike.
+
+## 10. L1 — the broker, as built
+
+The broker is a separate program, not a module. `broker-server.mjs` owns the
+secret; `credential-broker.ts` is the web tier's client and can hold nothing.
+The web tier parses untrusted request bodies with `JSON.parse`, and a process
+that both parses attacker-shaped input and holds service credentials is one
+compromise away from having both.
+
+**The property.** A capability revoked at epoch N+1 is refused at epoch N+1.
+The test revokes `storage.write`, keeps the identical token, and gets a
+refusal — same token bytes, no expiry, no timeout, no recall. TTL is
+containment for a broker that is unreachable; the epoch is what makes
+revocation mean something while it is running.
+
+**A stale token must be distinguishable from a policy refusal.** Five codes:
+`unauthenticated`, `unknown_session`, `stale_epoch`, `not_granted`,
+`out_of_scope`. A revoked token reports `stale_epoch` and a never-granted
+capability reports `not_granted`. Collapsing them would be worse than either:
+`not_granted` is an argument a caller can make in a later request, while
+`stale_epoch` means the session moved and the token described a world that no
+longer exists. That distinction is what the epoch-mutation test protects — with
+the check disabled the same refusal arrives as `not_granted`, five assertions
+fail, and the system is still *safe* but has stopped being *revocable*.
+
+**Grant advances the epoch too.** Otherwise a token minted before a capability
+arrived could not exercise it, escalation would silently not work, and the
+temptation would be to stop checking the epoch on the way up. The tests assert
+the symmetric case: a grant makes the prior token stale as well.
+
+**Re-opening is not a reset.** `openSession` returns `reused: true` for a
+known session and does not restore anything, or a client could clear a revoke
+by asking politely. The epoch never moves backwards.
+
+**Capabilities are derived, not declared.** `openSession` builds the
+capability set from the action mapping it was given rather than accepting a
+second, parallel list. Two sources of truth is one too many, and the failure
+that matters is the one where they disagree in the permissive direction. This
+was a real bug, not a hypothetical: the first implementation left the set
+empty and every session granted nothing, which is safe and completely broken.
+Only the tests that assert granted actions *work* caught it — a suite that
+only checked refusals would have passed it.
+
+**The socket is 0600 in a 0700 directory.** A broker socket anyone local can
+reach is a broker whose isolation is decorative. The mode is asserted against
+the real socket, and 0666 fails the suite.
+
+**`inspect` never returns a token.** Diagnostics need session state, not
+bearer material; a debug endpoint that prints live tokens is a credential
+store with extra steps.
+
+**The secret moves by environment, not argv.** argv is world-readable through
+`/proc`. It is generated per broker and never persisted — a broker that
+reloaded its state from a file on startup would be a broker with a secret at
+rest, so restart voids every session, which is the correct failure mode.
+
+**What the worker gets.** `CELESTYLE_BROKER_SOCKET` and
+`CELESTYLE_CHANNEL_TOKEN` — an address and a capability, neither spendable. The
+token names a session and epoch; it cannot be exchanged for a credential,
+because the broker never releases credentials to anyone. `BROKER_SCOPED_KEYS`
+is no longer empty, and each value is shape-checked before it crosses, so a
+truncated or substituted token surfaces at the boundary rather than as a
+confusing rejection later.
+
+### Known gap
+
+The signature comparison is `timingSafeEqual`. Replacing it with `===`
+causes **zero** test failures, and that is expected: a timing difference is
+not observable from a functional test. Recorded here rather than papered over
+with a source-grep test, which would assert that a string is present and call
+it coverage. If a non-constant-time comparison ever mattered, it would need a
+statistical test with a stated threshold, and the threshold would be a
+judgement about the attacker rather than about the code.
+
+### Still not done
+
+L2 (per-request authorization) and L3 (real service binding) are untouched.
+The broker proves the channel and the epoch; it has never spoken to a
+provider, and the first live integration stays blocked until the contract in
+§3 is reviewed.

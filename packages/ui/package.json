@@ -17,7 +17,7 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node test/build.mjs && node test/render.test.mjs && node test/telemetry.test.mjs && node test/verdict.test.mjs && node test/execution-authority.test.mjs && node test/event-ledger.test.mjs && node test/cognitive-pipeline.test.mjs && node test/isolated-executor.test.mjs && node test/planner.test.mjs && node test/capabilities.test.mjs && node test/token-scope.test.mjs && node test/session-e2e.test.mjs"
+    "test": "node test/build.mjs && node test/render.test.mjs && node test/telemetry.test.mjs && node test/verdict.test.mjs && node test/execution-authority.test.mjs && node test/event-ledger.test.mjs && node test/cognitive-pipeline.test.mjs && node test/isolated-executor.test.mjs && node test/planner.test.mjs && node test/capabilities.test.mjs && node test/token-scope.test.mjs && node test/credential-broker.test.mjs && node test/session-e2e.test.mjs"
   },
   "peerDependencies": {
     "react": "^18.2.0 || ^19.0.0",

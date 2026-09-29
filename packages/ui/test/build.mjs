@@ -63,6 +63,7 @@ for (const entry of [
   "planner.ts",
   "capabilities.ts",
   "token-scope.ts",
+  "credential-broker.ts",
   "session.ts",
   "isolated-executor.ts",
 ]) {
