@@ -41,6 +41,10 @@ export function defaultRegistry(): ToolRegistry {
           scopes: [],
           risk: "low",
           requiresApproval: false,
+          /* Local filesystem, no service behind it. Said explicitly so the
+             downscoper does not read its absence from the binding table as
+             an oversight. */
+          requiresToken: false,
           estimatedCost: 1,
         },
         {
@@ -49,6 +53,7 @@ export function defaultRegistry(): ToolRegistry {
           scopes: [],
           risk: "low",
           requiresApproval: false,
+          requiresToken: false,
           estimatedCost: 1,
         },
       ],

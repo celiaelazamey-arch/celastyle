@@ -309,21 +309,52 @@ where a mistake has consequences outside this repository.
 
 ---
 
-## 8. Decisions needed before implementation
+## 8. Decisions
 
-1. **Broker or injection?** I recommend broker; injection is a fallback for
-   SDKs that insist on a raw token. If injection is chosen for any capability,
-   that capability should be listed explicitly and treated as an exception
-   with a reason, not a default.
-2. **Which service first?** Recommend a read-only one. `storage.read` is the
-   natural candidate: it is already in the registry, and a read-only mistake is
-   recoverable.
-3. **Is the broker in-process, a sidecar, or a separate service?** This decides
-   the trust boundary and I would not pick it by default.
-4. **Does a capability with no downscoped equivalent exist, and what happens to
-   it?** My recommendation is that it becomes unavailable. The alternative —
-   silently issuing a broad token — recreates the exact problem this work
-   removes.
-5. **Epoch semantics on grant and on revoke.** Both should advance it. Confirm
-   that is intended, because a revoke that does not is a no-op with a
-   reassuring log message.
+1. **Broker or injection?** Broker. Injection is a fallback for SDKs that
+   insist on a raw token, and any capability using it is listed explicitly as
+   an exception with a reason rather than treated as a default. — *agreed,
+   and now written into the module as the reason Broker is the default.*
+2. **Which service first?** Read-only. `storage.read` is already in the
+   registry and a read-only mistake is recoverable. — *settled; the first
+   binding in `token-scope.ts` is `storage.read`.*
+3. **In-process, sidecar, or separate service?** **Undecided, and still
+   open.** It decides the trust boundary. Steps 1–3 of the sequence do not
+   depend on it, which is why it has not blocked anything so far. It must be
+   answered before L2.
+4. **A capability with no downscoped equivalent?** It becomes **unavailable**.
+   The alternative — issuing a broad token so the feature works — recreates
+   the problem this work removes, and does it invisibly. — *settled and
+   enforced: `resolveTokenSpec` refuses unbound capabilities rather than
+   falling back, and the test for that guard was checked by replacing the
+   guard with exactly that fallback.*
+5. **Epoch semantics?** Both grant and revoke advance it. A revoke that does
+   not advance the epoch is a no-op with a reassuring log message. — *still
+   unbuilt; this is the substance of step 3.*
+
+---
+
+## 9. Progress
+
+**L0 — done** (`707c4dc`). The child gets a constructed environment. The
+negative run showed 22 variables reaching a worker granted two, including
+`GITHUB_TOKEN` and `AWS_SECRET_ACCESS_KEY` in plaintext.
+
+**Scope downscoping — done.** `token-scope.ts` maps a surface to the exact
+OAuth scope list a credential must carry.
+
+The design decision that matters is that a scope's *effect* is recorded
+independently of the binding that uses it. If a binding also declared its own
+scope's effect, the check would be comparing a claim against itself, and a
+mis-authored binding would pass. As written, a binding that maps
+`storage.read` to `.../auth/drive` is refused before a token service is
+contacted — verified by disabling the ceiling, at which point the
+account-wide scope is emitted and three assertions catch it.
+
+`.../auth/drive` is the specific case. It reads like "drive", it is what a
+plausible mapping reaches for, and it is account-wide read/write/delete. A
+read-only task requesting it gets a working token and the lot.
+
+Tokens are distinguished from capabilities that need none: `requiresToken`
+defaults to true, so a forgotten binding and a genuinely local capability
+cannot look alike.

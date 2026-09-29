@@ -56,6 +56,19 @@ export type Grant = {
   risk: RiskLevel;
   /** High-impact capabilities cannot be self-granted. */
   requiresApproval: boolean;
+  /**
+   * Does this capability need a credential at all?
+   *
+   * Omitted means yes. That default is the fail-closed one: a capability
+   * that quietly needed a token but was marked as not needing one would be
+   * an invisible hole, whereas a capability wrongly marked as needing one is
+   * merely unavailable until someone binds it.
+   *
+   * The distinction exists so that "local, no secret involved" and "we
+   * forgot to write a scope binding" cannot look the same to a reviewer, or
+   * to the downscoper.
+   */
+  requiresToken?: boolean;
   estimatedCost?: number;
 };
 

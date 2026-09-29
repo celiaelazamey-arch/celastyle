@@ -62,6 +62,7 @@ for (const entry of [
   "policy-engine.ts",
   "planner.ts",
   "capabilities.ts",
+  "token-scope.ts",
   "session.ts",
   "isolated-executor.ts",
 ]) {
