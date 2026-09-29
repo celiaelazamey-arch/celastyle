@@ -259,6 +259,20 @@ export async function authorize(
     return { allowed: false, code: "unknown_tool", reason: "request names no tool" };
   }
 
+  /* Reserved namespace. The executor has internal actions — the undo path in
+     particular — that are not skills and are not reachable through a
+     pipeline step. Leaving them addressable by name would let a skill call
+     them directly with a hand-built payload, stepping around the code that
+     decides what an undo is. The namespace is refused at the gate, not
+     merely unused. */
+  if (request.tool.startsWith("__")) {
+    return {
+      allowed: false,
+      code: "unknown_tool",
+      reason: `"${request.tool}" is in the reserved internal namespace`,
+    };
+  }
+
   if (!skill.allowed_tools.includes(request.tool)) {
     return {
       allowed: false,

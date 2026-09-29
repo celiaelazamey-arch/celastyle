@@ -65,6 +65,13 @@ export type Executor = {
   run(action: string, payload: unknown): Promise<unknown>;
   /** Undo a completed run. May itself fail; that is not exceptional. */
   rollback(step: ProposedStep): Promise<void>;
+  /**
+   * Optional. Called once a step is verified, so an executor holding undo
+   * material for work that was never questioned can release it. Without this
+   * a long-lived agent accumulates a rollback record for every write it has
+   * ever made, which is a slow leak dressed up as a safety feature.
+   */
+  commit?(step: ProposedStep): void;
 };
 
 /** The independent check. Re-reads real state; never trusts the executor. */
@@ -243,7 +250,10 @@ export async function executeCognitiveStep(
 
   /* ── 4. Seal ────────────────────────────────────────────────────────────
      Only now, with execution output and verification evidence together, is
-     the record written. */
+     the record written. The executor is told the step is settled so it can
+     release whatever it was holding in order to make this one undoable. */
+  executor.commit?.(step);
+
   const entry = ledger.append({
     action: step.action,
     payload: {

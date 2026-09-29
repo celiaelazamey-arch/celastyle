@@ -313,5 +313,57 @@ console.log("\n\x1b[1mpayload shape\x1b[0m");
   check("isPlainObject accepts a plain object", _internal.isPlainObject({ a: 1 }));
 }
 
+// ── the reserved namespace ─────────────────────────────────────────────────
+// The executor has internal actions the pipeline never names. If a skill could
+// address one directly, it could hand-build the payload that drives the undo
+// path and step around whatever decided what an undo is. The gate refuses the
+// namespace by name rather than relying on nothing ever using it.
+console.log("\n\x1b[1mthe reserved internal namespace\x1b[0m");
+
+{
+  const openSkill = {
+    name: "open",
+    risk_level: "low",
+    // Deliberately grants everything the internal actions could want, so the
+    // refusal below cannot be mistaken for an ordinary permission check.
+    allowed_tools: ["write_file", "read_file", "__restore", "__anything", "__"],
+    allowed_directories: [WORKSPACE],
+  };
+
+  check(
+    "the internal undo action is refused even when the skill lists it",
+    await refusesWith({ tool: "__restore", payload: write(`${WORKSPACE}/x`) }, openSkill, yes, "unknown_tool"),
+  );
+  check(
+    "an unknown internal action is refused too",
+    await refusesWith({ tool: "__anything", payload: write(`${WORKSPACE}/x`) }, openSkill, yes, "unknown_tool"),
+  );
+  check(
+    "a bare __ is refused",
+    await refusesWith({ tool: "__", payload: write(`${WORKSPACE}/x`) }, openSkill, yes, "unknown_tool"),
+  );
+
+  const denial = await authorize({ tool: "__restore", payload: write(`${WORKSPACE}/x`) }, openSkill, yes);
+  check("the refusal names the namespace", (denial.reason ?? "").includes("reserved"), denial.reason);
+
+  // Both cases land on the same code, so the reason is the only thing telling
+  // "you asked for something internal" from "you named no tool at all". A
+  // gate that cannot tell those apart cannot explain a denial to whoever hit
+  // it.
+  const nameless = await authorize({ payload: write(`${WORKSPACE}/x`) }, openSkill, yes);
+  check(
+    "and is distinguishable from a request that named no tool",
+    (nameless.reason ?? "") !== (denial.reason ?? ""),
+    `${nameless.reason} / ${denial.reason}`,
+  );
+
+  // The namespace is closed regardless of what the skill claims, so an
+  // ordinary tool must still work beside them.
+  check(
+    "an ordinary tool beside them is unaffected",
+    await allow({ tool: "write_file", payload: write(`${WORKSPACE}/ok.md`) }, openSkill, yes),
+  );
+}
+
 console.log(`\n${fail === 0 ? "\x1b[32m✅" : "\x1b[31m❌"} ${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

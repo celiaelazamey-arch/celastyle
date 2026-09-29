@@ -1,0 +1,452 @@
+import { spawn } from "node:child_process";
+import { access, realpath } from "node:fs/promises";
+import { constants as FS } from "node:fs";
+import { isAbsolute, relative, resolve, dirname, basename, join } from "node:path";
+import { isInside, type SkillMeta } from "./execution-authority";
+
+/* =============================================================================
+   Isolated Executor
+   -----------------------------------------------------------------------------
+   The arm. It runs a tool in a separate process so that a crash, an infinite
+   loop or a runaway allocation kills the tool and nothing else — the pipeline,
+   the ledger and the authority all live in the parent and must survive whatever
+   the tool does.
+
+   The parent holds no filesystem-write capability of its own. It decides
+   (authority), supervises (here), and records (ledger). The child is the only
+   thing that writes, which is what makes "isolated" mean something: a bug in
+   the supervisor cannot corrupt a file, because the supervisor cannot.
+
+   Three properties, each enforced rather than requested:
+
+   1. Hard timeout. A hung child is SIGKILLed, not asked to stop. A child that
+      ignores SIGTERM — the common case for a wedged loop — must not be able
+      to hold the kernel open, and a graceful signal is a negotiation with a
+      process that may be the thing that stopped negotiating.
+
+   2. Output quota. stdout and stderr are counted as they arrive and the child
+      is killed the moment either exceeds its cap. Buffering without a cap is
+      a denial-of-service with extra steps: a tool that prints in a loop will
+      exhaust memory before any timeout fires, because the timeout is measured
+      in seconds and memory is measured in bytes.
+
+   3. Real-path confinement. The authority already checked the path lexically,
+      which cannot see a symlink. Here, with the filesystem in hand, the
+      target is resolved through fs.realpath and the *real* result is what gets
+      checked. That closes the escape the authority had to document as a
+      limitation, and it is the last check before the write.
+
+   The worker path is injectable so tests can supply a worker that misbehaves
+   on demand — one that hangs, one that floods, one that dies. Production
+   supplies the real one. No test hook exists in the production path.
+   ========================================================================== */
+
+export type ExecutorFailure = {
+  kind:
+    | "timeout"
+    | "output_limit"
+    | "crash"
+    | "protocol"
+    | "rejected"
+    | "refused";
+  reason: string;
+};
+
+export type ExecutionOutcome = {
+  ok: boolean;
+  /** The tool's own structured result, when it managed to produce one. */
+  result?: unknown;
+  /** Present when the tool refused on its own terms, e.g. a bad payload. */
+  error?: string;
+  /** How long the child actually ran. */
+  ms: number;
+  failure?: ExecutorFailure;
+  /** Where the write landed, after symlink resolution. */
+  path?: string;
+  /** What the file held before, so an undo is possible. */
+  previous?: string | null;
+  existed?: boolean;
+};
+
+export type ExecutorOptions = {
+  /** Path to the worker module. Defaults to the one shipped beside this file. */
+  workerPath?: string;
+  /** Node binary. Injectable so a test can point at a different one. */
+  execPath?: string;
+  /** Applied when the skill does not declare its own. */
+  defaultTimeoutMs?: number;
+  /** Per-stream cap. A tool that logs loudly dies rather than being believed. */
+  maxOutputBytes?: number;
+};
+
+const DEFAULTS = {
+  timeoutMs: 10_000,
+  maxOutputBytes: 256 * 1024,
+};
+
+/* ── child process supervision ─────────────────────────────────────────── */
+
+type ChildResult = {
+  stdout: string;
+  stderr: string;
+  code: number | null;
+  signal: NodeJS.Signals | null;
+  timedOut: boolean;
+  overLimit: boolean;
+  ms: number;
+};
+
+/**
+ * Run the worker once and collect everything about it.
+ *
+ * The kill is SIGKILL and it is unconditional. There is no path here that
+ * leaves a child running: on timeout, on output overflow, and on parent
+ * teardown, the same escalation happens. A supervisor that sometimes lets a
+ * process keep going is a supervisor that will eventually leak one.
+ */
+function runWorker(
+  execPath: string,
+  workerPath: string,
+  request: unknown,
+  timeoutMs: number,
+  maxOutputBytes: number,
+): Promise<ChildResult> {
+  return new Promise((resolvePromise) => {
+    const started = Date.now();
+    const child = spawn(execPath, [workerPath], {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, NODE_ENV: "production" },
+    });
+
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    let overLimit = false;
+    let settled = false;
+
+    const kill = () => {
+      if (child.exitCode === null && child.signalCode === null) {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          /* already gone */
+        }
+      }
+    };
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      kill();
+    }, timeoutMs);
+
+    const absorb = (chunk: Buffer, into: "out" | "err") => {
+      const next = (into === "out" ? stdout : stderr) + chunk.toString("utf8");
+      if (Buffer.byteLength(next, "utf8") > maxOutputBytes) {
+        if (!overLimit) {
+          overLimit = true;
+          // Killed the instant the cap is crossed, not after the process
+          // finishes being helpful.
+          kill();
+        }
+        return;
+      }
+      if (into === "out") stdout = next;
+      else stderr = next;
+    };
+
+    child.stdout.on("data", (chunk: Buffer) => absorb(chunk, "out"));
+    child.stderr.on("data", (chunk: Buffer) => absorb(chunk, "err"));
+
+    child.on("error", (error) => {
+      stderr += String(error instanceof Error ? error.message : error);
+    });
+
+    child.on("close", (code, signal) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolvePromise({ stdout, stderr, code, signal, timedOut, overLimit, ms: Date.now() - started });
+    });
+
+    try {
+      child.stdin.write(JSON.stringify(request));
+      child.stdin.end();
+    } catch {
+      // The child may have died before reading; "close" still fires and
+      // reports it.
+    }
+  });
+}
+
+/* ── real-path confinement ─────────────────────────────────────────────── */
+
+/**
+ * Resolve the real path of a target and prove it is inside the allowed set.
+ *
+ * The target may not exist yet — creating a file is the common case — so the
+ * nearest existing ancestor is resolved and the remainder appended. A symlink
+ * anywhere along the existing portion is followed, which is the entire point:
+ * `/allowed/link` pointing at `/etc` resolves to `/etc/...` and is refused.
+ */
+export async function resolveConfined(
+  target: string,
+  allowedDirectories: string[],
+): Promise<{ ok: true; real: string } | { ok: false; reason: string }> {
+  if (allowedDirectories.length === 0) {
+    return { ok: false, reason: "no allowed directories were declared" };
+  }
+
+  // The allowed roots are themselves resolved, so a symlinked root does not
+  // create an accidental second escape.
+  const realRoots: string[] = [];
+  for (const dir of allowedDirectories) {
+    try {
+      realRoots.push(await realpath(resolve(dir)));
+    } catch {
+      return { ok: false, reason: `allowed directory does not exist: ${dir}` };
+    }
+  }
+
+  let probe = isAbsolute(target) ? target : resolve(allowedDirectories[0]!, target);
+  const tail: string[] = [];
+  for (;;) {
+    try {
+      await access(probe, FS.F_OK);
+      break;
+    } catch {
+      const parent = dirname(probe);
+      if (parent === probe) {
+        return { ok: false, reason: `could not resolve any existing ancestor of ${target}` };
+      }
+      // basename, not a slice of the string: the slice drops the last
+      // segment correctly only for paths this function produced, and a
+      // silently wrong path is worse than an exception here.
+      tail.unshift(basename(probe));
+      probe = parent;
+    }
+  }
+
+  const realBase = await realpath(probe);
+  const real = join(realBase, ...tail);
+
+  const contained = realRoots.some((root) => isInside(root, real));
+  if (!contained) {
+    return {
+      ok: false,
+      reason: `resolves to ${real}, which is outside every allowed directory`,
+    };
+  }
+
+  return { ok: true, real };
+}
+
+/* ── the executor ──────────────────────────────────────────────────────── */
+
+export class IsolatedExecutor {
+  private readonly execPath: string;
+  private readonly workerPath: string;
+  private readonly defaultTimeoutMs: number;
+  private readonly maxOutputBytes: number;
+
+  /**
+   * What each write overwrote, keyed by path, so a failed verification can be
+   * undone. Unbounded by nature, so it is cleared when the pipeline confirms
+   * a step — the pipeline calls commit() on success, and nothing here grows
+   * forever in a long-lived agent.
+   */
+  private undo = new Map<string, { previous: string | null; existed: boolean }>();
+
+  constructor(options: ExecutorOptions = {}) {
+    this.execPath = options.execPath ?? process.execPath;
+    this.workerPath =
+      options.workerPath ?? new URL("./tools/worker.mjs", import.meta.url).pathname;
+    this.defaultTimeoutMs = options.defaultTimeoutMs ?? DEFAULTS.timeoutMs;
+    this.maxOutputBytes = options.maxOutputBytes ?? DEFAULTS.maxOutputBytes;
+  }
+
+  /** How many undo records are being held. Exposed so a leak is observable. */
+  get pendingUndos(): number {
+    return this.undo.size;
+  }
+
+  private timeoutFor(skill: SkillMeta | undefined): number {
+    const declared = skill?.timeout_ms;
+    return typeof declared === "number" && declared > 0 ? declared : this.defaultTimeoutMs;
+  }
+
+  async run(
+    action: string,
+    payload: unknown,
+    skill?: SkillMeta,
+  ): Promise<ExecutionOutcome> {
+    const result = await this.dispatch(action, payload, skill);
+    if (result.ok && action === "write_file" && typeof result.path === "string") {
+      this.undo.set(result.path, {
+        previous: result.previous ?? null,
+        existed: result.existed ?? false,
+      });
+    }
+    return result;
+  }
+
+  private async dispatch(
+    action: string,
+    payload: unknown,
+    skill?: SkillMeta,
+  ): Promise<ExecutionOutcome> {
+    const allowedDirectories = skill?.allowed_directories ?? [];
+    const isWrite = action === "write_file";
+    const isRead = action === "read_file";
+
+    // Confinement is decided here, at the last moment before the write, and
+    // against the real filesystem. The authority's lexical check is not
+    // repeated — it would pass — but its limitation is closed.
+    if (isWrite || isRead) {
+      const path = (payload as { path?: unknown })?.path;
+      if (typeof path !== "string") {
+        return {
+          ok: false,
+          ms: 0,
+          error: `${action} needs a string path`,
+          failure: { kind: "rejected", reason: "payload has no string path" },
+        };
+      }
+      const confined = await resolveConfined(path, allowedDirectories);
+      if (confined.ok === false) {
+        return {
+          ok: false,
+          ms: 0,
+          error: confined.reason,
+          failure: { kind: "refused", reason: confined.reason },
+        };
+      }
+    }
+
+    const child = await runWorker(
+      this.execPath,
+      this.workerPath,
+      { action, payload },
+      this.timeoutFor(skill),
+      this.maxOutputBytes,
+    );
+
+    if (child.timedOut) {
+      return {
+        ok: false,
+        ms: child.ms,
+        failure: {
+          kind: "timeout",
+          reason: `exceeded its ${this.timeoutFor(skill)}ms budget and was killed`,
+        },
+      };
+    }
+
+    if (child.overLimit) {
+      return {
+        ok: false,
+        ms: child.ms,
+        failure: {
+          kind: "output_limit",
+          reason: `produced more than ${this.maxOutputBytes} bytes and was killed`,
+        },
+      };
+    }
+
+    /* A child killed by a signal never got to report. An exit code of 0 with
+       no output is just as untrustworthy: it means something wrote nothing,
+       which is indistinguishable from a tool that never ran. */
+    if (child.signal !== null || child.code !== 0 || child.stdout.trim() === "") {
+      return {
+        ok: false,
+        ms: child.ms,
+        error: child.stderr.trim().slice(0, 500) || undefined,
+        failure: {
+          kind: child.signal ? "crash" : "protocol",
+          reason: child.signal
+            ? `terminated by ${child.signal}`
+            : child.code !== 0
+              ? `exited with code ${child.code}`
+              : "produced no result",
+        },
+      };
+    }
+
+    /* A tool may log to stdout before answering — progress bars, warnings,
+       a line of context. The result is the last line, and taking the whole
+       buffer would mean a chatty-but-correct tool is treated as a protocol
+       failure. Taking the last *parseable* line would be too forgiving: a
+       truncated write would then be read as an answer, which is the exact
+       confusion this layer exists to prevent. Last line, parsed strictly. */
+    const lines = child.stdout.trim().split("\n").filter((l) => l.trim().length > 0);
+    const lastLine = lines.at(-1) ?? "";
+
+    let parsed: { ok?: boolean; error?: string; path?: string; previous?: string | null; existed?: boolean };
+    try {
+      parsed = JSON.parse(lastLine);
+    } catch {
+      return {
+        ok: false,
+        ms: child.ms,
+        error: child.stdout.trim().slice(0, 500) || undefined,
+        failure: {
+          kind: "protocol",
+          reason: "the last line of output was not a result the supervisor can read",
+        },
+      };
+    }
+
+    if (parsed.ok !== true) {
+      return {
+        ok: false,
+        ms: child.ms,
+        error: parsed.error ?? "the tool refused the request",
+        failure: { kind: "rejected", reason: parsed.error ?? "tool reported failure" },
+      };
+    }
+
+    return {
+      ok: true,
+      ms: child.ms,
+      result: parsed,
+      path: parsed.path,
+      previous: parsed.previous ?? null,
+      existed: parsed.existed ?? false,
+    };
+  }
+
+  /**
+   * Undo a write. Runs in a child too, for the same reasons as everything
+   * else — an undo that can crash must not take the kernel with it.
+   */
+  async rollback(step: { payload?: unknown; skill?: SkillMeta }): Promise<void> {
+    const path = (step.payload as { path?: unknown })?.path;
+    if (typeof path !== "string") throw new Error("nothing to roll back: no path");
+
+    const record = this.undo.get(path);
+    if (!record) throw new Error(`no undo is recorded for ${path}`);
+
+    const child = await runWorker(
+      this.execPath,
+      this.workerPath,
+      {
+        action: "__restore",
+        payload: { path, previous: record.previous, existed: record.existed },
+      },
+      this.timeoutFor(step.skill),
+      this.maxOutputBytes,
+    );
+
+    if (child.timedOut || child.overLimit || child.signal !== null || child.code !== 0) {
+      throw new Error(`rollback did not complete: ${child.stderr.trim().slice(0, 200) || "child failed"}`);
+    }
+
+    this.undo.delete(path);
+  }
+
+  /** Called by the pipeline once a step is verified, so undo records do not
+   *  accumulate for work that was never questioned. */
+  commit(step: { payload?: unknown }): void {
+    const path = (step.payload as { path?: unknown })?.path;
+    if (typeof path === "string") this.undo.delete(path);
+  }
+}
