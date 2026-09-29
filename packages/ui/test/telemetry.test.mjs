@@ -166,5 +166,27 @@ console.log("\n\x1b[1mTelemetry → graph projection\x1b[0m");
   check("the constraint shows the measured scope", constraint.detail === "5 files", `got ${constraint.detail}`);
 }
 
+{
+  // A review gate is real, completed, and unconfirmed. The graph has no
+  // review glyph, so it must fall back to the honest existing state — idle,
+  // "not settled" — rather than being rounded up to a pass.
+  const run = makeRun({
+    gates: { ...makeRun().gates, compat: { outcome: "review" } },
+  });
+  const { nodes } = projectRun(run);
+  const compat = nodes.find((n) => n.id === "gate-compat");
+  check("a review gate is not drawn as passed", compat.status !== "pass", `got ${compat.status}`);
+  check("a review gate reads as not settled", compat.status === "idle", `got ${compat.status}`);
+}
+
+{
+  // ...and a review gate must not mark the path as violated: nothing failed.
+  const run = makeRun({
+    gates: { ...makeRun().gates, compat: { outcome: "review" } },
+  });
+  const { edges } = projectRun(run);
+  check("a review gate does not violate the path", edges.every((e) => e.violated === false));
+}
+
 console.log(`\n${fail === 0 ? "\x1b[32m✅" : "\x1b[31m❌"} ${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

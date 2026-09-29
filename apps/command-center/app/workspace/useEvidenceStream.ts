@@ -26,7 +26,7 @@ export type GateState = {
   /* "running" is a live in-flight state the server announces when it starts a
      command; "run" is the optimistic state a gate holds before the server says
      anything, so the graph renders a full skeleton immediately. */
-  outcome: "pass" | "fail" | "run" | "running" | "resolved" | "skip";
+  outcome: "pass" | "fail" | "review" | "run" | "running" | "resolved" | "skip";
   value?: string;
   detail?: string;
   ms?: number;

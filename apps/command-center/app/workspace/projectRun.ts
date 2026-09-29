@@ -36,6 +36,11 @@ export type Projection = { nodes: GraphNode[]; edges: GraphEdge[] };
  */
 function toStatus(outcome: GateState["outcome"]): GraphNode["status"] {
   if (outcome === "pass" || outcome === "fail" || outcome === "skip") return outcome;
+  /* "review" and the in-flight states all mean the same thing to a reader
+     walking the graph: this gate has not produced a confirmed answer yet. The
+     graph has no distinct review glyph, and inventing one here would be worse
+     than the truth — idle says "not settled", which is exactly right. The
+     Verify panel carries the review state in words. */
   return "idle";
 }
 

@@ -30,7 +30,12 @@ export type GateId = "scope" | "tests" | "type" | "build" | "security" | "compat
 export type GateResult = {
   id: GateId;
   label: string;
-  outcome: "pass" | "fail" | "skip";
+  /* "review" is not a pass and not a failure: the gate ran and produced a
+     real measurement, but what it measured means a person has to decide. It
+     exists because a two-valued gate forces a choice between asserting a
+     result the gate cannot prove and reporting a failure that did not
+     happen. */
+  outcome: "pass" | "fail" | "review" | "skip";
   /** The measurement shown on the gate, e.g. "71/71" or "0.0s". */
   value?: string;
   detail?: string;
@@ -79,8 +84,13 @@ type Gate = {
   argv: string[];
   cwd: string;
   timeout: number;
-  /** Extracts the reported numbers from stdout. */
-  read: (stdout: string) => Omit<GateResult, "id" | "label" | "outcome" | "ms">;
+  /** Extracts the reported numbers from stdout. May also return an `outcome`
+   *  to withhold a pass the measurement does not support. */
+  read: (stdout: string) => {
+    value?: string;
+    detail?: string;
+    outcome?: GateResult["outcome"];
+  };
   /** Extra environment for this gate. Constant values declared above, never
    *  anything derived from a request. */
   env?: Record<string, string>;
@@ -223,20 +233,32 @@ const GATES: Gate[] = [
   {
     id: "compat",
     label: "compat",
-    argv: ["git", "diff", "--name-only", "HEAD", "--", "packages/tokens/src"],
+    /* `status --porcelain` rather than `diff --name-only`, so a token file that
+       is new and untracked is still seen. A contract that has never been
+       committed is exactly the one most likely to be wrong, and `diff` would
+       not report it at all. */
+    argv: ["git", "status", "--porcelain", "--untracked-files=all", "--", "packages/tokens/src"],
     cwd: REPO,
     timeout: 10_000,
     read: (stdout) => {
-      // A token change is a potential public-contract change; the gate flags
-      // it rather than asserting a pass it cannot prove.
-      const touched = stdout.split("\n").filter(Boolean).length;
-      if (touched > 0) {
-        return {
-          value: `${touched} token file${touched === 1 ? "" : "s"}`,
-          detail: "token contract touched",
-        };
+      const files = stdout
+        .split("\n")
+        .filter((l) => l.trim().length > 0)
+        .map((l) => l.slice(3).trim());
+
+      if (files.length === 0) {
+        return { value: "preserved", detail: "no token changes" };
       }
-      return { value: "preserved", detail: "no token changes" };
+      /* A token change is a change to the contract every other package is
+         written against. This gate cannot prove the contract survived — that
+         needs a consumer check, which does not exist yet — so it does not
+         claim a pass. It reports what it actually observed and asks for a
+         human. Naming the files is what makes that review possible. */
+      return {
+        outcome: "review" as const,
+        value: `${files.length} token file${files.length === 1 ? "" : "s"}`,
+        detail: files.map((f) => f.split("/").pop()).join(", "),
+      };
     },
   },
 ];
@@ -286,13 +308,16 @@ async function runGate(gate: Gate): Promise<GateResult> {
       env: gateEnv(gate),
     });
 
-    const { value, detail } = gate.read(stdout);
+    /* A command that exits 0 has not automatically earned a pass. `read` may
+       return its own outcome, and it is allowed to say "review" — a gate can
+       complete successfully and still have nothing it is able to confirm. */
+    const parsed = gate.read(stdout);
     return {
       id: gate.id,
       label: gate.label,
-      outcome: "pass",
-      value,
-      detail,
+      outcome: parsed.outcome ?? "pass",
+      value: parsed.value,
+      detail: parsed.detail,
       ms: Date.now() - started,
     };
   } catch (error) {
@@ -384,8 +409,11 @@ export function deriveVerdict(gates: GateResult[]): Verification["verdict"] {
   const realFailures = gates.filter((g) => g.outcome === "fail" && !g.environmental);
   if (realFailures.length > 0) return "REJECTED";
 
-  // Inconclusive because the environment got in the way.
-  if (gates.some((g) => g.environmental)) return "IN_REVIEW";
+  // A gate that ran and could not conclude. The environment getting in the
+  // way is one way this happens; a gate that completed but cannot prove its
+  // own result — a token contract change, say — is another. Both mean the
+  // same thing for the verdict: this run is not a confirmation.
+  if (gates.some((g) => g.environmental || g.outcome === "review")) return "IN_REVIEW";
 
   return "VERIFIED";
 }
@@ -502,7 +530,7 @@ export type TelemetryWireEvent =
   | {
       type: "gate";
       gate: GateId;
-      outcome: "pass" | "fail" | "run" | "running" | "resolved" | "skip";
+      outcome: "pass" | "fail" | "review" | "run" | "running" | "resolved" | "skip";
       value?: string;
       detail?: string;
       ms?: number;

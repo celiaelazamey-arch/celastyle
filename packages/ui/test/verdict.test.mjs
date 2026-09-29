@@ -104,19 +104,54 @@ check("a fully green run is verified", deriveVerdict(allPass) === "VERIFIED");
 }
 
 {
-  // A broken token contract is a real failure, not an inconclusive one: the
-  // change is wrong, so it rejects. What must never happen is it being
-  // reported as verified.
+  // The compat gate cannot prove a token contract survived — it only sees
+  // that the file changed — so it reports "review" rather than claiming a
+  // pass. The distinction this guards: a change that touches the contract
+  // every package is written against is not a confirmed-good change.
+  const gates = allPass.map((g) =>
+    g.id === "compat" ? gate("compat", "review") : g,
+  );
+  check(
+    "a token contract change is never silently verified",
+    deriveVerdict(gates) === "IN_REVIEW",
+    `got ${deriveVerdict(gates)}`,
+  );
+}
+
+{
+  // A review gate is not a failure, so it must not reject and must not mark
+  // the path to the decision as violated.
+  const gates = allPass.map((g) =>
+    g.id === "compat" ? gate("compat", "review") : g,
+  );
+  check(
+    "a review gate does not reject the run",
+    deriveVerdict(gates) !== "REJECTED",
+    `got ${deriveVerdict(gates)}`,
+  );
+}
+
+{
+  // A real failure still rejects even when a review gate is also present, and
+  // the verdict must not soften because something is merely unconfirmed.
+  const gates = [
+    gate("compat", "review"),
+    gate("tests", "fail"),
+    ...allPass.filter((g) => g.id !== "compat" && g.id !== "tests"),
+  ];
+  check(
+    "a real failure rejects despite a concurrent review",
+    deriveVerdict(gates) === "REJECTED",
+    `got ${deriveVerdict(gates)}`,
+  );
+}
+
+{
+  // A broken token contract, detected as an outright failure, still rejects.
   const gates = allPass.map((g) =>
     g.id === "compat" ? gate("compat", "fail") : g,
   );
-  const verdict = deriveVerdict(gates);
-  check(
-    "a token contract change is never silently verified",
-    verdict !== "VERIFIED",
-    `got ${verdict}`,
-  );
-  check("a broken token contract rejects", verdict === "REJECTED", `got ${verdict}`);
+  check("a failed token gate rejects", deriveVerdict(gates) === "REJECTED");
 }
 
 console.log("\n\x1b[1mgateEnv\x1b[0m");
