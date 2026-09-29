@@ -52,24 +52,27 @@ execFileSync(
   { cwd: appWorkspace, stdio: "inherit" },
 );
 
-// verify.ts pulls in node:child_process, so it is compiled on its own.
-execFileSync(
-  process.platform === "win32" ? "npx.cmd" : "npx",
-  [
-    "tsc",
-    join(appLib, "verify.ts"),
-    "--outDir",
-    join(pkgRoot, ".test-build-workspace"),
-    "--module",
-    "ESNext",
-    "--target",
-    "ES2022",
-    "--moduleResolution",
-    "bundler",
-    "--skipLibCheck",
-  ],
-  { cwd: appLib, stdio: "inherit" },
-);
+// The app's server-side modules pull in node builtins, so they are compiled
+// on their own rather than through the package's tsconfig.
+for (const entry of ["verify.ts", "execution-authority.ts"]) {
+  execFileSync(
+    process.platform === "win32" ? "npx.cmd" : "npx",
+    [
+      "tsc",
+      join(appLib, entry),
+      "--outDir",
+      join(pkgRoot, ".test-build-workspace"),
+      "--module",
+      "ESNext",
+      "--target",
+      "ES2022",
+      "--moduleResolution",
+      "bundler",
+      "--skipLibCheck",
+    ],
+    { cwd: appLib, stdio: "inherit" },
+  );
+}
 
 const targets = [
   { dir: join(pkgRoot, ".test-build"), label: ".test-build" },
