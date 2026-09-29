@@ -17,20 +17,53 @@ import { fileURLToPath } from "node:url";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 const pkgRoot = resolve(here, "..");
+const appRoot = resolve(pkgRoot, "../../apps/command-center/app/workspace");
 
+// 1 — Compile the component package, and the app's pure projection module
+//     (the telemetry test drives the same function the panel uses, so it has
+//     to be compiled rather than reimplemented in the test).
 execFileSync(
   process.platform === "win32" ? "npx.cmd" : "npx",
   ["tsc", "-p", join(here, "tsconfig.json")],
   { cwd: pkgRoot, stdio: "inherit" },
 );
 
-const outDir = join(pkgRoot, ".test-build");
+execFileSync(
+  process.platform === "win32" ? "npx.cmd" : "npx",
+  [
+    "tsc",
+    join(appRoot, "projectRun.ts"),
+    "--outDir",
+    join(pkgRoot, ".test-build-workspace"),
+    "--module",
+    "ESNext",
+    "--target",
+    "ES2022",
+    "--moduleResolution",
+    "bundler",
+    // projectRun imports types from @celastyle/ui, which resolves to the
+    // package's .tsx source, so JSX must be enabled or tsc refuses the
+    // transitive .tsx modules.
+    "--jsx",
+    "react-jsx",
+    "--skipLibCheck",
+  ],
+  { cwd: appRoot, stdio: "inherit" },
+);
+
+const targets = [
+  { dir: join(pkgRoot, ".test-build"), label: ".test-build" },
+  { dir: join(pkgRoot, ".test-build-workspace"), label: ".test-build-workspace" },
+];
+
 let stripped = 0;
 let fixed = 0;
 
 const CSS_IMPORT = /^import\s+["'][^"']+\.css["'];?$/gm;
 const STATIC_FROM = /(from\s+["']\.{1,2}\/[^"']*?)(?<!\.js)(["'])/g;
 const DYNAMIC = /import\(\s*["'](\.{1,2}\/[^"']*?)(?<!\.js)(["'])\s*\)/g;
+const TYPE_IMPORT = /^import\s+type\s.*$/gm;
+const BARE_TYPE = /^export\s+type\s.*$/gm;
 
 function walk(dir) {
   for (const entry of readdirSync(dir)) {
@@ -42,24 +75,24 @@ function walk(dir) {
     if (!entry.endsWith(".js")) continue;
 
     const src = readFileSync(full, "utf8");
-    let next = src.replace(CSS_IMPORT, "");
+    // Two things must not survive into plain Node: CSS imports (no bundler to
+    // resolve them) and type-only imports (erased at runtime, but a surviving
+    // `import { type X }` would still be parsed as a value import).
+    let next = src.replace(CSS_IMPORT, "").replace(TYPE_IMPORT, "").replace(BARE_TYPE, "");
     if (next !== src) stripped += 1;
 
     next = next.replace(STATIC_FROM, (_m, spec, quote) => {
       fixed += 1;
       return `${spec}.js${quote}`;
     });
-    next = next.replace(DYNAMIC, (_m, spec, quote) => {
-      fixed += 1;
-      return `import("${spec}.js"${quote ? "" : ""})`;
-    });
+    next = next.replace(DYNAMIC, (_m, spec) => `import("${spec}.js")`);
 
     if (next !== src) writeFileSync(full, next);
   }
 }
 
-walk(outDir);
-console.log(
-  `[test] compiled @celastyle/ui → .test-build ` +
-    `(${stripped} CSS imports stripped, ${fixed} specifiers resolved)`,
-);
+for (const { dir, label } of targets) {
+  walk(dir);
+  console.log(`[test] compiled ${label}`);
+}
+console.log(`[test] ${stripped} type/CSS statements stripped, ${fixed} specifiers resolved`);

@@ -10,6 +10,7 @@ build/
 out/
 *.tsbuildinfo
 .test-build/
+.test-build-workspace/
 
 # Environment
 .env

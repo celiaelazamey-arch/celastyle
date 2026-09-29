@@ -19,6 +19,8 @@ import {
   ConstraintTag,
   DashboardIcon,
   EvidenceCard,
+  EvidenceGraph,
+  layoutGraph,
   PolicyPanel,
   StatusBadge,
   deriveTone,
@@ -187,6 +189,67 @@ group("CommandPalette");
   );
   check("renders nothing while closed", closed === "");
   check("is a function component", typeof CommandPalette === "function");
+}
+
+/* --- Evidence graph layout (pure function) -------------------------------- */
+group("layoutGraph");
+{
+  const nodes = [
+    { id: "intent", label: "Intent", status: "pass", kind: "intent", layer: 0 },
+    { id: "gate-a", label: "A", status: "pass", kind: "gate", layer: 1 },
+    { id: "gate-b", label: "B", status: "fail", kind: "gate", layer: 1 },
+    { id: "deploy", label: "Deploy", status: "idle", kind: "deploy", layer: 2 },
+  ];
+  const edges = [
+    { from: "intent", to: "gate-a" },
+    { from: "intent", to: "gate-b" },
+    { from: "gate-a", to: "deploy" },
+  ];
+
+  const layout = layoutGraph(nodes, edges);
+  check("positions every node", layout.nodes.length === 4);
+  check("places nodes into columns", layout.columns === 3);
+  check("emits a path for every valid edge", layout.edges.length === 3);
+  check("each edge path is a curve", layout.edges.every((e) => e.path.startsWith("M ")));
+  check(
+    "column x strictly increases",
+    layout.nodes
+      .filter((n) => n.kind === "gate" || n.id === "intent")
+      .every((n) => typeof n.x === "number"),
+  );
+  check("nodes in the same column share an x", new Set(layout.nodes.filter((n)=>n.kind==="gate").map((n)=>n.x)).size === 1);
+
+  // A dangling edge (a node that was filtered out) must be dropped, not drawn
+  // to a broken endpoint.
+  const dangling = layoutGraph(nodes, [...edges, { from: "ghost", to: "intent" }]);
+  check("drops edges to unknown nodes", dangling.edges.length === 3, `got ${dangling.edges.length}`);
+
+  const empty = layoutGraph([], []);
+  check("handles an empty graph", empty.columns === 0 && empty.nodes.length === 0);
+}
+
+/* --- EvidenceGraph render ------------------------------------------------- */
+group("EvidenceGraph");
+{
+  const html = renderToStaticMarkup(
+    h(EvidenceGraph, {
+      nodes: [
+        { id: "intent", label: "Run", status: "pass", kind: "intent", layer: 0 },
+        { id: "g", label: "tests", status: "fail", kind: "gate", layer: 1 },
+      ],
+      edges: [{ from: "intent", to: "g" }],
+      label: "Test graph",
+    }),
+  );
+  check("renders a node per entry", count(html, "data-node=") === 2, `got ${count(html, "data-node=")}`);
+  check("preserves node status", html.includes('data-status="fail"') && html.includes('data-status="pass"'));
+  check("preserves node kind", html.includes('data-kind="gate"'));
+  check("renders edges as an SVG", html.includes("<svg") && html.includes("<path"));
+  check("renders a legend", html.includes("not evaluated") && html.includes("running"));
+  check("announces the graphic", html.includes("Test graph"));
+
+  const empty = renderToStaticMarkup(h(EvidenceGraph, { nodes: [], edges: [], label: "Empty" }));
+  check("renders an empty state", empty.includes("no evidence to graph"));
 }
 
 /* --- CommandRail --------------------------------------------------------- */

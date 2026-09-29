@@ -63,6 +63,23 @@ export {
 export { PolicyPanel } from "./policy-panel/PolicyPanel";
 export type { PolicyPanelProps, PolicyRule } from "./policy-panel/types";
 
+/* --- Evidence graph --- */
+export { EvidenceGraph } from "./evidence-graph/EvidenceGraph";
+export type {
+  EvidenceGraphProps,
+  GraphEdge,
+  GraphNode,
+  GraphNodeKind,
+  GraphNodeStatus,
+} from "./evidence-graph/types";
+export {
+  layoutGraph,
+  NODE_WIDTH,
+  NODE_HEIGHT,
+  type Layout,
+  type PositionedNode,
+} from "./evidence-graph/layout";
+
 export {
   CommandPalette,
   useCommandPalette,

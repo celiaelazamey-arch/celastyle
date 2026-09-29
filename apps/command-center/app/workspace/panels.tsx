@@ -1,15 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   CompactCard,
   EvidenceCard,
+  EvidenceGraph,
   PolicyPanel,
   StatusBadge,
   TerminalIcon,
+  type GraphEdge,
+  type GraphNode,
 } from "@celastyle/ui";
 import { ALERTS, NODES, OVERVIEW_STATS, SESSIONS, SIGNALS } from "./data";
 import { EVIDENCE_SUMMARY, POLICY_RULES, RUNS } from "./evidence";
+import { projectRun } from "./projectRun";
+import { useEvidenceStream } from "./useEvidenceStream";
 
 /* =============================================================================
    Panels
@@ -258,6 +263,82 @@ export function EvidencePanel() {
           ) : null
         }
       />
+    </div>
+  );
+}
+
+/* =============================================================================
+   Graph panel — the live evidence DAG fed by the telemetry stream.
+   ============================================================================= */
+
+export function GraphPanel() {
+  const { run, status } = useEvidenceStream();
+  const [selected, setSelected] = useState<string | null>(null);
+
+  // The projection (live run → graph nodes/edges) is shared with its test via
+  // projectRun, so it is exercised directly rather than reimplemented here.
+  const { nodes, edges } = useMemo(
+    () => (run ? projectRun(run) : { nodes: [] as GraphNode[], edges: [] as GraphEdge[] }),
+    [run],
+  );
+
+  const selectedNode = nodes.find((n) => n.id === selected) ?? null;
+
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-[var(--panel-gap)]">
+      <div className="cc-panel flex min-h-0 flex-1 flex-col">
+        <div className="cc-panel__header">
+          <h2 className="cc-panel__title">Evidence graph</h2>
+          <div className="celastyle-spacer" />
+          <span
+            className="celastyle-live-dot text-[var(--text-2xs)] text-ink-tertiary"
+            data-status={status}
+          >
+            {status === "live" ? "streaming" : status}
+          </span>
+        </div>
+        <div className="cc-panel__body min-h-0 flex-1 overflow-x-auto">
+          {run ? (
+            <EvidenceGraph
+              nodes={nodes}
+              edges={edges}
+              selectedId={selected}
+              onSelect={(id) => setSelected((s) => (s === id ? null : id))}
+              label={`Live evidence graph for run ${run.runId}`}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center font-mono text-xs text-[var(--text-muted)]">
+              connecting to telemetry…
+            </div>
+          )}
+        </div>
+        {selectedNode ? (
+          <div className="border-t border-[var(--border-subtle)] px-[var(--panel-padding)] py-3">
+            <div className="flex items-center gap-2">
+              <span className="celastyle-label">selected node</span>
+              <span className="font-mono text-xs text-[var(--text-primary)]">
+                {selectedNode.label}
+              </span>
+              <StatusBadge
+                status={
+                  selectedNode.status === "pass"
+                    ? "VERIFIED"
+                    : selectedNode.status === "fail"
+                      ? "REJECTED"
+                      : "PENDING"
+                }
+                size="sm"
+                label={selectedNode.status}
+              />
+            </div>
+            {selectedNode.detail ? (
+              <p className="mt-1 font-mono text-[11px] text-[var(--text-dim)]">
+                {selectedNode.detail}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

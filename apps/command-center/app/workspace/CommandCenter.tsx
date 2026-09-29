@@ -8,6 +8,7 @@ import {
   CommandPalette,
   CommandRail,
   DashboardIcon,
+  LayersIcon,
   ServerIcon,
   SettingsIcon,
   TerminalIcon,
@@ -19,6 +20,7 @@ import { RAIL_ITEMS } from "./data";
 import {
   AlertsPanel,
   EvidencePanel,
+  GraphPanel,
   NodesPanel,
   OverviewPanel,
   SessionsPanel,
@@ -29,6 +31,7 @@ import {
 const PANEL_ICONS: Record<string, React.ReactNode> = {
   overview: <DashboardIcon />,
   evidence: <ActivityIcon />,
+  graph: <LayersIcon />,
   nodes: <ServerIcon />,
   sessions: <TerminalIcon />,
   alerts: <AlertIcon />,
@@ -135,6 +138,7 @@ export function CommandCenter() {
         <div className="celastyle-scroll min-h-0 flex-1 p-[var(--panel-gap)]">
           {activePanel === "overview" ? <OverviewPanel /> : null}
           {activePanel === "evidence" ? <EvidencePanel /> : null}
+          {activePanel === "graph" ? <GraphPanel /> : null}
           {activePanel === "nodes" ? <NodesPanel /> : null}
           {activePanel === "sessions" ? <SessionsPanel /> : null}
           {activePanel === "alerts" ? <AlertsPanel /> : null}
