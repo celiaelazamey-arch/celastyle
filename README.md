@@ -184,18 +184,25 @@ Nothing is lost, because every commit is pushed to `origin` before the turn
 ends. To recover:
 
 ```bash
-git fetch origin arena/01a0ec3c-celastyle:refs/remotes/origin/arena/01a0ec3c-celastyle
-git reset --mixed origin/arena/01a0ec3c-celastyle
-npm ci
+npm run recover
 ```
 
-`--mixed` leaves the untracked files on disk untouched and just re-points HEAD
-at the pushed history. `npm ci` rather than `npm install`, so the restore
-reproduces the exact tree the last green run was measured against — a range
-resolve is the wrong tool when the lockfile is already correct.
+That is `scripts/recover.sh`, which fetches the branch, resets `--mixed` (so
+untracked files on disk are left alone), runs `npm ci` to reproduce the exact
+tree the last green run was measured against, and then verifies the result: it
+prints the tracked-file count, the dirty count, and the behind/ahead delta, and
+**exits non-zero unless the delta is `0 0`**.
 
-Afterwards `git rev-list --left-right --count origin/arena/01a0ec3c-celastyle...HEAD`
-should print `0 0`.
+It also refuses to run when `HEAD` is ahead of origin with unpushed commits. A
+`reset --mixed` does not delete untracked files, so recovering a reverted tree
+is genuinely safe — but an unpushed commit would be orphaned by the reset, and
+nothing in the output would say so afterwards. Five resets have happened in
+this project; nothing was lost because every commit was pushed first, and that
+check is what keeps it true.
+
+`npm ci` rather than `npm install`, so the restore reproduces the tree the last
+green run was measured against — a range resolve is the wrong tool when the
+lockfile is already correct.
 
 The symptom to watch for is a number that looks like a finding but is not. A
 `compat: IN_REVIEW` or a `scope: 67 files` measured during a dropped workspace
