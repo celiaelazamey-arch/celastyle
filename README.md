@@ -172,3 +172,32 @@ Requires Node 20+.
   transition durations, while preserving opacity fades (those carry state changes — removing
   them causes a hard state swap)
 - Numeric lanes use `font-variant-numeric: tabular-nums` so live-updating values do not jitter
+
+## Recovering a dropped workspace
+
+The sandbox restores the working directory from a snapshot between turns, and
+`node_modules` is excluded from those snapshots. When that happens the working
+tree silently reverts to the clone state — `git log` shows `b99afdf` "Initial
+commit", every file reads as untracked, and `node_modules` is gone.
+
+Nothing is lost, because every commit is pushed to `origin` before the turn
+ends. To recover:
+
+```bash
+git fetch origin arena/01a0ec3c-celastyle:refs/remotes/origin/arena/01a0ec3c-celastyle
+git reset --mixed origin/arena/01a0ec3c-celastyle
+npm ci
+```
+
+`--mixed` leaves the untracked files on disk untouched and just re-points HEAD
+at the pushed history. `npm ci` rather than `npm install`, so the restore
+reproduces the exact tree the last green run was measured against — a range
+resolve is the wrong tool when the lockfile is already correct.
+
+Afterwards `git rev-list --left-right --count origin/arena/01a0ec3c-celastyle...HEAD`
+should print `0 0`.
+
+The symptom to watch for is a number that looks like a finding but is not. A
+`compat: IN_REVIEW` or a `scope: 67 files` measured during a dropped workspace
+is reporting the damage, not the repository. Re-run the gates after recovering
+before believing any of it.
