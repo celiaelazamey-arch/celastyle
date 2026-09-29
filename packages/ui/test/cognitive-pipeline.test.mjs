@@ -310,5 +310,174 @@ console.log("\n\x1b[1mapproval reaches the gate through the pipeline\x1b[0m");
   check("and nothing was executed in that case", !c.callOrder.includes("execute:write_file"));
 }
 
+// ── sealing: when the record cannot be written ────────────────────────────
+/*
+ * The pipeline's last word is the ledger. If that word cannot be written the
+ * step has run, the verifier has confirmed it, and no record of either
+ * exists. That combination has no honest success, so the contract names it
+ * rather than letting the caller infer it.
+ */
+console.log("\n\x1b[1msealing: the ledger refuses the entry\x1b[0m");
+
+/** A ledger whose disk fails, so append throws the way a full disk would. */
+function failingLedger() {
+  const onDisk = [];
+  let failing = false;
+  const ledger = new EventLedger([], {
+    write(line) {
+      if (failing) throw new Error("ENOSPC: no space left on device");
+      onDisk.push(JSON.parse(line));
+    },
+  });
+  return {
+    ledger,
+    onDisk,
+    fail() { failing = true; },
+    heal() { failing = false; },
+  };
+}
+
+{
+  const c = fresh();
+  const store = failingLedger();
+  store.fail();
+
+  let result;
+  let threw = null;
+  try {
+    result = await executeCognitiveStep(step(), {
+      executor: spyExecutor(),
+      verifier: spyVerifier(true),
+      ledger: store.ledger,
+      approve: () => true,
+    });
+  } catch (error) {
+    threw = error.message;
+  }
+
+  check("a failed seal does not escape as an exception", threw === null, String(threw));
+  check("the step reports record_failed", result?.status === "record_failed", result?.status);
+  check("it does NOT claim authorized_and_verified", result?.status !== "authorized_and_verified");
+  check("there is no ledger entry, because none was written", result?.ledgerEntry === undefined);
+  check("and the reason the disk gave is carried through",
+    (result?.sealError ?? "").includes("ENOSPC"), result?.sealError);
+
+  /* The step really did run and really was verified — which is exactly why
+     reporting a plain failure would be a lie of the opposite kind. The
+     evidence is present, and so is the admission that it is unrecorded. */
+  check("the evidence is still returned", result?.verificationEvidence !== undefined);
+  check("the execution output is still returned", result?.executionOutput !== undefined);
+
+  check("nothing reached the sink", store.onDisk.length === 0, `${store.onDisk.length}`);
+  check("and the in-memory chain is empty, matching the disk",
+    store.ledger.length === 0, String(store.ledger.length));
+  check("so the ledger still verifies clean rather than holding a phantom",
+    store.ledger.verify().ok === true);
+}
+
+{
+  // The undo exists to make an unrecorded change recoverable. Releasing it
+  // because the record failed would destroy the only handle on a change that
+  // now has no paper trail at all.
+  const c = fresh();
+  const store = failingLedger();
+  store.fail();
+
+  let commits = 0;
+  const executor = {
+    async run() { return { wrote: true }; },
+    async rollback() { trace("rollback"); },
+    commit() { commits += 1; },
+  };
+
+  const result = await executeCognitiveStep(step(), {
+    executor,
+    verifier: spyVerifier(true),
+    ledger: store.ledger,
+    approve: () => true,
+  });
+
+  check("record_failed does not release the undo", commits === 0, `commit called ${commits}x`);
+  check("and the step is not reported as sealed", result.status === "record_failed");
+}
+
+{
+  // The mirror case, and the one that keeps the ordinary path honest: a
+  // successful seal does release it, otherwise undo records would accumulate
+  // for every step the agent ever took.
+  const c = fresh();
+  let commits = 0;
+  const executor = {
+    async run() { return { wrote: true }; },
+    async rollback() { trace("rollback"); },
+    commit() { commits += 1; },
+  };
+
+  const result = await executeCognitiveStep(step(), {
+    executor,
+    verifier: spyVerifier(true),
+    ledger: c.ledger,
+    approve: () => true,
+  });
+
+  check("a successful seal releases the undo exactly once", commits === 1, `${commits}`);
+  check("and reports the ordinary success", result.status === "authorized_and_verified");
+}
+
+{
+  // Outage in the middle of a session, rather than before it starts. The
+  // chain must survive a failed write and the next step must link correctly —
+  // this is the corruption the old ordering made permanent.
+  const c = fresh();
+  const store = failingLedger();
+  const deps = { executor: spyExecutor(), verifier: spyVerifier(true), approve: () => true };
+
+  const first = await executeCognitiveStep(step({ id: "step-a" }), { ...deps, ledger: store.ledger });
+  check("the first step seals normally", first.status === "authorized_and_verified", first.status);
+
+  store.fail();
+  const during = await executeCognitiveStep(step({ id: "step-b" }), { ...deps, ledger: store.ledger });
+  check("the step during the outage reports record_failed", during.status === "record_failed", during.status);
+
+  store.heal();
+  const after = await executeCognitiveStep(step({ id: "step-c" }), { ...deps, ledger: store.ledger });
+  check("the step after recovery seals again", after.status === "authorized_and_verified", after.status);
+
+  check("the durable chain holds the two real steps", store.onDisk.length === 2, `${store.onDisk.length}`);
+  const reloaded = new EventLedger(store.onDisk);
+  check("and it verifies with no gap and no broken link", reloaded.verify().ok === true,
+    JSON.stringify(reloaded.verify().problems));
+  check("memory and disk agree after the outage",
+    store.ledger.length === store.onDisk.length);
+  check("the failed step left no entry behind",
+    !store.onDisk.some(e => JSON.stringify(e.payload ?? {}).includes("step-b")));
+}
+
+{
+  // Denial is recorded too, and a disk that refuses that record must not
+  // report a denial that was never written. The step is refused either way —
+  // the executor never runs — but the record is genuinely absent.
+  const c = fresh();
+  const store = failingLedger();
+  store.fail();
+
+  let result;
+  let threw = null;
+  try {
+    result = await executeCognitiveStep(step({ skill: undefined }), {
+      executor: spyExecutor(),
+      verifier: spyVerifier(true),
+      ledger: store.ledger,
+    });
+  } catch (error) {
+    threw = error.message;
+  }
+
+  check("a denial whose record cannot be written still refuses", result?.status !== "authorized_and_verified");
+  check("and the executor never ran", !c.callOrder.some(x => x.startsWith("execute:")));
+  check("nothing reached the disk", store.onDisk.length === 0);
+  check("the in-memory chain stayed empty", store.ledger.length === 0, String(store.ledger.length));
+}
+
 console.log(`\n${fail === 0 ? "\x1b[32m✅" : "\x1b[31m❌"} ${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

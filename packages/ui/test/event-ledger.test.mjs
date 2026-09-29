@@ -284,5 +284,95 @@ console.log("\n\x1b[1mwhat a chain cannot detect\x1b[0m");
   check("a fresh ledger seals to genesis", empty.seal() === GENESIS_HASH);
 }
 
+// ── durability: memory and disk must never disagree ───────────────────────
+/*
+ * A ledger that has diverged from its own file is the one failure the hash
+ * chain cannot catch, because the chain in memory is intact. These tests
+ * drive a real failing sink and assert the invariant that matters: an entry
+ * is in the chain if and only if it is on disk.
+ */
+console.log("\n\x1b[1mdurability: a failed write must leave no trace in memory\x1b[0m");
+
+{
+  const onDisk = [];
+  let failing = false;
+  const sink = {
+    write(line) {
+      if (failing) throw new Error("ENOSPC: no space left on device");
+      onDisk.push(JSON.parse(line));
+    },
+  };
+  const ledger = new EventLedger([], sink);
+
+  ledger.append({ action: "step-0", verifier_result: "passed" });
+  const afterFirst = ledger.length;
+
+  failing = true;
+  let thrown = null;
+  try {
+    ledger.append({ action: "step-1", verifier_result: "passed" });
+  } catch (error) {
+    thrown = error.message;
+  }
+
+  check("the write failure surfaces to the caller", (thrown ?? "").includes("ENOSPC"), String(thrown));
+  check("the failed entry did NOT enter the in-memory chain", ledger.length === afterFirst,
+    `${ledger.length} vs ${afterFirst}`);
+  check("the in-memory tail is still the last real entry", ledger.all().at(-1).action === "step-0");
+  check("nothing was written to the sink either", onDisk.length === 1, `${onDisk.length}`);
+
+  // The chain the agent believes in is still a real chain.
+  check("memory still verifies clean", ledger.verify().ok === true);
+  check("with no phantom entry inside it", ledger.verify().length === 1);
+
+  /* The failure that the old ordering made permanent: recovery. The next
+     append reads its previous_hash from whatever is at the tail, so if a
+     phantom had survived, the entry written to disk would link to a hash
+     nothing on disk produces. */
+  failing = false;
+  ledger.append({ action: "step-2", verifier_result: "passed" });
+
+  const onDiskChain = new EventLedger(onDisk);
+  check("after recovery the durable chain verifies", onDiskChain.verify().ok === true,
+    JSON.stringify(onDiskChain.verify().problems));
+  check("and holds exactly the two real entries", onDiskChain.length === 2);
+  check("memory and disk now agree", ledger.length === onDisk.length);
+  check("and agree entry for entry",
+    ledger.all().every((e, i) => e.current_hash === onDisk[i].current_hash));
+  check("no sequence gap was left behind",
+    onDisk.every((e, i) => e.index === i), JSON.stringify(onDisk.map(e => e.index)));
+  check("every link resolves to the entry before it",
+    onDisk.slice(1).every((e, i) => e.previous_hash === onDisk[i].current_hash));
+}
+
+{
+  // A ledger with no sink is in-memory by design and must not be treated as
+  // a failed write. This is the case the ordering change could plausibly
+  // have broken, so it is asserted rather than assumed.
+  const memoryOnly = new EventLedger();
+  memoryOnly.append({ action: "a", verifier_result: "passed" });
+  memoryOnly.append({ action: "b", verifier_result: "passed" });
+  check("an in-memory ledger still appends normally", memoryOnly.length === 2);
+  check("and verifies", memoryOnly.verify().ok === true);
+}
+
+{
+  // The order of the two operations is the whole fix, so it is asserted
+  // directly rather than inferred from the failure behaviour above: at the
+  // moment the sink is written, the entry must not yet be reachable.
+  const seen = [];
+  let lengthDuringWrite = null;
+  const ledger = new EventLedger([], {
+    write() {
+      // Called before the push, so the chain is still short.
+      lengthDuringWrite = ledger.length;
+    },
+  });
+  ledger.append({ action: "solo", verifier_result: "passed" });
+  check("the sink is written before the entry joins the chain", lengthDuringWrite === 0,
+    String(lengthDuringWrite));
+  check("and the entry is in the chain once the write returns", ledger.length === 1);
+}
+
 console.log(`\n${fail === 0 ? "\x1b[32m✅" : "\x1b[31m❌"} ${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

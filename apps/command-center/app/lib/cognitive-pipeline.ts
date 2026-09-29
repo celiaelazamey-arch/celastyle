@@ -88,7 +88,10 @@ export type StepStatus =
   | "execution_failed"
   | "verification_failed"
   /** Verification failed AND the undo failed. The workspace is now unknown. */
-  | "rollback_failed";
+  | "rollback_failed"
+  /** The work succeeded and the record of it could not be written. The
+   *  workspace holds a verified change that nothing proves was approved. */
+  | "record_failed";
 
 export type StepResult = {
   status: StepStatus;
@@ -98,8 +101,11 @@ export type StepResult = {
   authorityReason?: string;
   executionOutput?: unknown;
   verificationEvidence?: unknown;
-  /** Every outcome is recorded, so this is always present. */
-  ledgerEntry: LedgerEntry;
+  /** Every outcome is recorded — except record_failed, where by definition
+   *  there is no entry, which is why this is optional rather than asserted
+   *  with a cast. A non-null type here would be a lie the compiler could not
+   *  catch and every caller would be taught to trust. */
+  ledgerEntry?: LedgerEntry;
   /** Set when the ledger itself could not accept the entry. Rare, and
    *  surfaced rather than swallowed, because a step that ran without a
    *  record is the one outcome worse than a failed step. */
@@ -250,21 +256,42 @@ export async function executeCognitiveStep(
 
   /* ── 4. Seal ────────────────────────────────────────────────────────────
      Only now, with execution output and verification evidence together, is
-     the record written. The executor is told the step is settled so it can
-     release whatever it was holding in order to make this one undoable. */
-  executor.commit?.(step);
-
-  const entry = ledger.append({
-    action: step.action,
-    payload: {
+     the record written. */
+  let entry: LedgerEntry;
+  try {
+    entry = ledger.append({
+      action: step.action,
+      payload: {
+        stepId: step.id,
+        outcome: "verified",
+        expected: step.expected,
+        execution: executionOutput,
+        evidence: verification.evidence,
+      },
+      verifier_result: "success",
+    });
+  } catch (error) {
+    /* The work happened, the verifier confirmed it, and the record of that
+       could not be written. That combination has no honest success: the
+       workspace holds a change nobody can prove was made or approved, and
+       returning authorized_and_verified would be reporting a certainty this
+       step does not have. The undo is deliberately NOT released — a caller
+       that wants the workspace back can still get it, and the host is told
+       this plainly rather than left to infer it from a missing file. */
+    return {
+      status: "record_failed",
       stepId: step.id,
-      outcome: "verified",
-      expected: step.expected,
-      execution: executionOutput,
-      evidence: verification.evidence,
-    },
-    verifier_result: "success",
-  });
+      action: step.action,
+      executionOutput,
+      verificationEvidence: verification.evidence,
+      sealError: message(error),
+    };
+  }
+
+  /* Released only after the entry is durably recorded. The undo exists to
+     make an unrecorded change recoverable; spending it before the record
+     exists destroys the only proof that the change was ever made. */
+  executor.commit?.(step);
 
   return {
     status: "authorized_and_verified",

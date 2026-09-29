@@ -306,8 +306,27 @@ export class EventLedger {
       current_hash: computeHash(body),
     };
 
+    /* Durability first. The sink is written before the entry joins the
+       in-memory chain, and the reason is not tidiness.
+     
+       The other order produces a failure that is worse than a crash. Push
+       first, write second: the write throws, the caller sees an exception,
+       but the entry is already in memory. The next append then reads its
+       previous_hash from that phantom, writes it to disk, and the durable
+       record is left with a hole and a link to an entry nobody can find —
+       a permanently broken chain that verifies clean in memory. One full
+       disk, and the ledger's whole guarantee is gone while reporting that
+       it is intact.
+     
+       Writing first makes append atomic in the only sense that matters: an
+       entry is in the chain if and only if it is on disk. If the write
+       throws, nothing entered memory, the next entry links to the last real
+       one, and the file stays a valid chain across the outage.
+       
+       A no-op sink still appends — an in-memory ledger has nothing to
+       persist and must not be treated as a failure. */
+    if (this.sink) this.sink.write(`${JSON.stringify(entry)}\n`);
     this.entries.push(entry);
-    this.sink?.write(`${JSON.stringify(entry)}\n`);
     return entry;
   }
 
