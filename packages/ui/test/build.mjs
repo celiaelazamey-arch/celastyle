@@ -64,6 +64,7 @@ for (const entry of [
   "capabilities.ts",
   "token-scope.ts",
   "credential-broker.ts",
+  "broker/broker-gate.ts",
   "session.ts",
   "isolated-executor.ts",
 ]) {
@@ -81,6 +82,13 @@ for (const entry of [
       "--moduleResolution",
       "bundler",
       "--skipLibCheck",
+      // Strict, deliberately. Without it `allowed: true` and `allowed: false`
+      // widen to `boolean`, discriminated unions stop discriminating, and a
+      // refusal branch loses its `code` and `reason` — a type error that
+      // never fires here and a real narrowing the tests rely on. The app
+      // tsconfig has always been strict; this build compiles the same files
+      // and had quietly not been.
+      "--strict",
     ],
     { cwd: appLib, stdio: "inherit" },
   );

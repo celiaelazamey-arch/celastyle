@@ -78,10 +78,16 @@ export class CredentialBroker {
   private nextId = 1;
   private readonly pending = new Map<number, Pending>();
 
+  /** Where the broker is listening. An address, not a credential — the
+   *  worker has to be told it, and anyone who holds it still needs a channel
+   *  token to get a word in. */
+  readonly socketPath: string;
+
   private constructor(
-    private readonly socketPath: string,
+    socketPath: string,
     socket: Socket,
   ) {
+    this.socketPath = socketPath;
     this.socket = socket;
     socket.setEncoding("utf8");
     socket.on("data", (chunk: string) => this.onData(chunk));

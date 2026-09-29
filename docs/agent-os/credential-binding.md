@@ -438,3 +438,91 @@ L2 (per-request authorization) and L3 (real service binding) are untouched.
 The broker proves the channel and the epoch; it has never spoken to a
 provider, and the first live integration stays blocked until the contract in
 §3 is reviewed.
+
+## 11. L2′ — the broker, wired
+
+The broker was correct and unreachable. `grep -rn CredentialBroker apps/` returned
+nothing but its own definition: a component with no caller, tested only by a
+test that was itself the caller. Everything in §10 was true and none of it
+was load-bearing.
+
+`BrokerGate` is the piece that changes that. It owns three things that must
+travel together — the connection, the token, and the ledger — because
+separating them is how this goes wrong: a caller that can reach the broker
+without recording, or record without deciding, has rebuilt the gap with extra
+steps. The executor consults it after path confinement and before the spawn,
+which is the last moment a refusal still costs nothing.
+
+**A decision is evidence.** Every authorization appends to the ledger, allowed
+or refused, carrying the capability and epoch or the refusal code. A denial
+that leaves no trace is indistinguishable from an action never attempted, and
+"nobody tried that" is the conclusion an auditor is being steered toward.
+
+**Fail closed.** A broker that cannot be reached produces a refusal. The
+reason names the transport, not the capability, so an operator looking at a
+stopped broker is not sent to re-grant something that was never the problem.
+
+**The gate does not heal itself.** This is the subtle one. A gate that
+refreshed its token whenever it saw `stale_epoch` would re-establish exactly
+the authority a revoke just removed: refused, ask again, handed a fresh
+token, succeed. `refreshToken()` exists and is public, but nothing in the
+request path calls it. Refreshing is a deliberate act by whoever granted the
+capability.
+
+### The property, measured
+
+`/proc/self/environ`, read by the worker itself, after the real executor
+spawned it against a real broker:
+
+```
+PATH, NODE_ENV, CELESTYLE_BROKER_SOCKET, CELESTYLE_CHANNEL_TOKEN
+```
+
+Four variables, no others, and the count is asserted so a new one cannot be
+added quietly. The operator's credential was sitting in the parent process
+the whole time. The token is present and usable — an executor that spawned
+nothing would also report no environment, and the test would be measuring the
+absence of a process — so this is not the weak claim that the worker was
+given nothing and could do nothing. It was given a capability, used it, and
+the capability is not a credential.
+
+### Negative results
+
+| Mutation | Result |
+|---|---|
+| Gate not wired into the executor | **20 failures** — the revoked action wrote the file |
+| Gate re-mints on a stale token | **1 failure** — token identity changed |
+
+The first is the real one: removing the check does not merely stop the
+recording, it lets a revoked capability write to disk.
+
+The second is worth reading closely. The self-healing gate was caught, but the
+*capability set* also refused the re-minted token, because the revoke removed
+the capability and not only the epoch. That is defense in depth working: the
+epoch is the fast mechanism that makes revocation immediate, the capability
+set is the durable one that survives a caller trying to talk its way back in.
+A system with only the first would have been defeated by a two-line change.
+
+### Two things found along the way
+
+**The test build was not strict.** `packages/ui/test/build.mjs` compiles the
+app libs without `--strict`, so `allowed: true` and `allowed: false` widened
+to `boolean`, discriminated unions stopped discriminating, and the refusal
+branch lost its `code` and `reason`. The app tsconfig has always been strict;
+this build compiles the same files and had quietly not been. All twelve files
+are clean under `--strict` — it cost nothing and it had been hiding a real
+narrowing the tests depend on.
+
+**The installed compiler cannot check call signatures at all.** TypeScript
+5.9.3 as installed here fails on the canonical example from its own handbook —
+`interface Fn { (x: string): number }` with a class implementing it — and
+also on plain assignability to a call signature, with no `implements`
+involved. 50 of 53 dependency entries in the lockfile carry no integrity
+hash. The runtime tests are unaffected; they spawn real processes and read
+real sockets. But the *typecheck* gate has been running on a compiler whose
+correctness cannot be established, and every type-level claim in this project
+should be read with that in mind until the toolchain is verified.
+
+`Authorizer` is therefore declared as an object with a named method rather
+than a function type — partly better design, and partly because a contract the
+compiler cannot verify is not a contract.

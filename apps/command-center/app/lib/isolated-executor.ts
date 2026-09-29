@@ -6,6 +6,7 @@ import { constants as FS } from "node:fs";
 import { isAbsolute, relative, resolve, dirname, basename, join } from "node:path";
 import { isInside, type SkillMeta } from "./execution-authority";
 import type { ToolSurface } from "./capabilities";
+import type { Authorizer } from "./broker/broker-gate";
 
 /* =============================================================================
    Isolated Executor
@@ -103,6 +104,16 @@ export type ExecutorOptions = {
    * be decided here and granted deliberately.
    */
   taskEnv?: Record<string, string>;
+  /**
+   * Consulted before every child is spawned, and it decides.
+   *
+   * Optional only because the broker is optional, not because it is
+   * optional once a session is brokered: an executor built for a
+   * broker-backed task without an authorizer would spawn the child and skip
+   * the check entirely, which is the failure this whole layer exists to
+   * prevent. Wiring the gate is a separate, visible step for that reason.
+   */
+  authorizer?: Authorizer;
 };
 
 const DEFAULTS = {
@@ -411,6 +422,7 @@ export class IsolatedExecutor {
   private readonly maxOutputBytes: number;
   private surface?: ToolSurface;
   private taskEnv: Record<string, string>;
+  private authorizer: Authorizer | undefined;
 
   /**
    * What each write overwrote, keyed by path, so a failed verification can be
@@ -427,6 +439,7 @@ export class IsolatedExecutor {
     this.maxOutputBytes = options.maxOutputBytes ?? DEFAULTS.maxOutputBytes;
     this.surface = options.surface;
     this.taskEnv = options.taskEnv ?? {};
+    this.authorizer = options.authorizer;
   }
 
   /**
@@ -530,6 +543,39 @@ export class IsolatedExecutor {
       }
     }
 
+    /* The broker gate. Placed after the path is resolved and before the
+       child is spawned, which is the last moment at which a refusal still
+       costs nothing.
+
+       The surface check above already refused anything this task was never
+       granted, and that check is local. This one is the broker's: it
+       re-answers against the session and the epoch as they are *now*, across
+       a process boundary, and it writes the answer to the ledger. Between
+       the two, a revoke that lands mid-run is caught here rather than at the
+       end of it.
+
+       Fail closed. A broker that cannot be reached produces a refusal, not a
+       retry into a yes — a gate that opens when it cannot verify is not a
+       gate. The reason names the code, so an operator looking at a stopped
+       broker is not sent to re-grant a capability that was never the
+       problem. */
+    if (this.authorizer) {
+      const target = (payload as { path?: unknown })?.path;
+      const decision = await this.authorizer.authorize({
+        action,
+        resource: typeof target === "string" ? target : undefined,
+      });
+      if (!decision.allowed) {
+        return {
+          ok: false,
+          ms: 0,
+          failure: {
+            kind: "refused",
+            reason: `the broker refused "${action}": ${decision.code} — ${decision.reason}`,
+          },
+        };
+      }
+    }
     const child = await runWorker(
       this.execPath,
       this.workerPath,
