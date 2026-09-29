@@ -81,6 +81,16 @@ export function useEvidenceStream(url = "/api/telemetry") {
   const frameRef = useRef<number | null>(null);
   const sourceRef = useRef<EventSource | null>(null);
 
+  /* Event rate, measured over a sliding window rather than shown as a
+     constant. A run emits a handful of events across tens of seconds, so the
+     honest figure here is closer to "0.1/s" than to the "12.4k/s" it
+     replaced — and the lower number is the real one. It is smoothed over a
+     few seconds because a per-instant rate flickers between 0 and 1 and
+     reads as noise. */
+  const eventsRef = useRef<number[]>([]);
+  const rateTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [rate, setRate] = useState("—");
+
   /** Coalesce a burst of events into a single render. */
   const schedule = (mutate: () => void) => {
     mutate();
@@ -101,6 +111,10 @@ export function useEvidenceStream(url = "/api/telemetry") {
       } catch {
         return;
       }
+
+      // Counted at arrival, before batching, so the rate reflects what the
+      // server sent rather than how many renders the coalescer produced.
+      eventsRef.current.push(Date.now());
 
       schedule(() => {
         switch (event.type) {
@@ -201,12 +215,32 @@ export function useEvidenceStream(url = "/api/telemetry") {
 
     sourceRef.current = source;
 
+    /* Recompute the rate on a timer rather than per event: the per-event
+       value flickers between 0 and 1 and reads as broken telemetry, while a
+       few-second window gives a number a person can actually interpret. */
+    rateTimerRef.current = setInterval(() => {
+      const now = Date.now();
+      const window = 5000;
+      const recent = eventsRef.current.filter((t) => now - t <= window);
+      eventsRef.current = recent;
+      const perSecond = recent.length / (window / 1000);
+      setRate(
+        recent.length === 0
+          ? "idle"
+          : perSecond >= 1
+            ? `${perSecond.toFixed(1)}/s`
+            : `${(recent.length / window).toFixed(2)}/s`,
+      );
+    }, 1000);
+
     return () => {
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+      if (rateTimerRef.current) clearInterval(rateTimerRef.current);
+      eventsRef.current = [];
       sourceRef.current = null;
       source.close();
     };
   }, [url]);
 
-  return { run, status };
+  return { run, status, rate };
 }

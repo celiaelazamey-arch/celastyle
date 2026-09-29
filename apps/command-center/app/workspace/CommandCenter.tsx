@@ -52,9 +52,32 @@ export function CommandCenter() {
   // panels each opening their own EventSource would run the real gates twice.
   const stream = useEvidenceStream();
 
+  /* The rail badge is the number of gates that did not come back clean, taken
+     from the live run. It used to be a literal in RAIL_ITEMS, which meant the
+     sidebar reported "2 issues" while a run with six passing gates was on
+     screen — a red signal contradicting a green one, with nothing behind
+     either. A badge that is not derived from a measurement is decoration that
+     looks like telemetry, so the rail now measures the same thing the panel
+     does. */
+  const issueCount = useMemo(() => {
+    const gates = stream.run?.gates;
+    if (!gates) return 0;
+    return Object.values(gates).filter((g) => g.outcome === "fail" || g.outcome === "review")
+      .length;
+  }, [stream.run]);
+
   const items = useMemo<CommandRailItem[]>(
-    () => RAIL_ITEMS.map((item) => ({ ...item, icon: PANEL_ICONS[item.id] ?? null })),
-    [],
+    () =>
+      RAIL_ITEMS.map((item) => ({
+        ...item,
+        icon: PANEL_ICONS[item.id] ?? null,
+        // Only the alerts rail reflects real gates. The others still carry
+        // placeholder counts from the original mock data, and pretending they
+        // are live would recreate the same problem one badge over — so they
+        // are left visibly placeholder rather than quietly re-labelled.
+        badge: item.id === "alerts" ? issueCount : item.badge,
+      })),
+    [issueCount],
   );
 
   /* The palette navigates panels and toggles the theme, so its command list is
@@ -141,6 +164,7 @@ export function CommandCenter() {
         <TopBar
           activePanel={activePanel}
           onOpenPalette={() => palette.setOpen(true)}
+          rate={stream.rate}
         />
         <div className="celastyle-scroll min-h-0 flex-1 p-[var(--panel-gap)]">
           {activePanel === "overview" ? <OverviewPanel /> : null}
@@ -167,9 +191,11 @@ export function CommandCenter() {
 function TopBar({
   activePanel,
   onOpenPalette,
+  rate,
 }: {
   activePanel: string;
   onOpenPalette: () => void;
+  rate: string;
 }) {
   const title =
     RAIL_ITEMS.find((item) => item.id === activePanel)?.label ?? "Overview";
@@ -193,7 +219,12 @@ function TopBar({
       <span className="celastyle-live-dot text-[var(--text-2xs)] text-ink-tertiary">
         streaming
       </span>
-      <span className="celastyle-data text-xs text-ink-muted">12.4k/s</span>
+      {/* Rate measured from the events that actually arrived on this stream.
+          The literal it replaced ("12.4k/s") was a mock constant that had no
+          relationship to anything on the wire — the same category of claim
+          the verification engine was built to remove. A real rate is slower
+          than a fake one, and that is the point. */}
+      <span className="celastyle-data text-xs text-ink-muted">{rate}</span>
     </header>
   );
 }
