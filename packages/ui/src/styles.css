@@ -2,18 +2,15 @@
    @celastyle/ui — aggregate stylesheet
    -----------------------------------------------------------------------------
    The single import a consuming app needs. Order matters: tokens first so the
-   custom properties exist before any component rule resolves them, then base
-   defaults, then components (so a component can safely win a specificity tie
-   against a utility).
+   semantic layer — and the surface aliases the evidence patterns reference —
+   exist before any rule that resolves them.
+
+   Only the two components that need real stylesheets ship CSS. The evidence
+   patterns are written with Tailwind utilities and resolve their colours
+   through the token layer via arbitrary values, e.g. bg-[var(--bg-surface)].
    ========================================================================== */
 
 @import "@celastyle/tokens";
 
-/* Component styles */
 @import "./command-rail/command-rail.css";
 @import "./compact-card/compact-card.css";
-@import "./status-badge/status-badge.css";
-@import "./constraint-tag/constraint-tag.css";
-@import "./evidence-card/evidence-card.css";
-@import "./policy-panel/policy-panel.css";
-@import "./command-palette/command-palette.css";

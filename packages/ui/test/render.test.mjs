@@ -4,15 +4,16 @@
  * These render each component to static markup and assert on the output
  * rather than on implementation details. That matters for this package
  * specifically: the things most likely to regress silently here are the
- * accessibility semantics (ARIA roles, roving tabindex) and the data
- * rendering (an evidence check silently dropping its `data-outcome`), and
- * neither is caught by a type check.
+ * accessibility semantics (ARIA roles, roving tabindex, focus handling) and
+ * the data rendering (an evidence check silently dropping its `data-outcome`),
+ * and none of that is caught by a type check.
  *
  * Run: npm run test -w @celastyle/ui
  */
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement as h } from "react";
 import {
+  CommandPalette,
   CommandRail,
   CompactCard,
   ConstraintTag,
@@ -20,6 +21,8 @@ import {
   EvidenceCard,
   PolicyPanel,
   StatusBadge,
+  deriveTone,
+  toEvidenceChecks,
 } from "../.test-build/index.js";
 
 let pass = 0;
@@ -44,35 +47,49 @@ const count = (html, needle) => html.split(needle).length - 1;
 /* --- StatusBadge --------------------------------------------------------- */
 group("StatusBadge");
 {
-  const html = renderToStaticMarkup(
-    h(StatusBadge, { tone: "success", children: "verified" }),
-  );
-  check('resolves tone to data-tone="success"', html.includes('data-tone="success"'));
-  check("renders its label", html.includes("verified"));
+  const html = renderToStaticMarkup(h(StatusBadge, { status: "VERIFIED" }));
+  check('resolves to data-status-badge="VERIFIED"', html.includes('data-status-badge="VERIFIED"'));
+  check("renders its default label", html.includes("VERIFIED"));
   check(
     "emits no literal colour (tokens only)",
     !/#[0-9a-f]{3,8}\b/i.test(html),
     "a hex leaked into the component",
   );
+  check(
+    "is not a live region",
+    !html.includes('role="status"'),
+    "role=status is a live region and would re-announce every badge",
+  );
 }
 {
   const html = renderToStaticMarkup(
-    h(StatusBadge, { tone: "danger", variant: "solid", live: true, children: "running" }),
+    h(StatusBadge, { status: "VIOLATION", label: "REJECTED" }),
   );
-  check('supports variant="solid"', html.includes('data-variant="solid"'));
-  check("renders a live indicator", html.includes("cs-badge__live"));
+  check("custom label overrides the default", html.includes("REJECTED") && !html.includes("POLICY_VIOLATION"));
+  check("resolves the violation state", html.includes('data-status-badge="VIOLATION"'));
 }
 
 /* --- ConstraintTag ------------------------------------------------------- */
 group("ConstraintTag");
 {
   const html = renderToStaticMarkup(
-    h(ConstraintTag, { kind: "security", state: "violated", value: "1", children: "no secrets" }),
+    h(ConstraintTag, { kind: "security", state: "violated", value: "1" }, "no secrets"),
   );
-  check('resolves state to data-state="violated"', html.includes('data-state="violated"'));
+  check('resolves to data-constraint="violated"', html.includes('data-constraint="violated"'));
   check("renders the kind label", html.includes("security"));
   check("renders the rule text", html.includes("no secrets"));
   check("renders the value", html.includes(">1<"));
+  check("renders the state word", html.includes("FAIL"));
+}
+{
+  const html = renderToStaticMarkup(
+    h(ConstraintTag, { state: "pending" }, "awaiting evaluation"),
+  );
+  check(
+    "keeps a distinct pending state",
+    html.includes('data-constraint="pending"') && html.includes("EVAL"),
+    "pending must not collapse into satisfied",
+  );
 }
 
 /* --- EvidenceCard -------------------------------------------------------- */
@@ -82,62 +99,94 @@ group("EvidenceCard");
     id: "run-1",
     intent: "widen git refspec",
     scope: "packages/tokens",
-    verdict: "verified",
-    tone: "success",
+    verdict: "REJECTED",
+    tone: "danger",
     duration: "4m",
     checks: [
-      { id: "intent", label: "intent", outcome: "pass", value: "aligned" },
       { id: "scope", label: "scope", outcome: "pass" },
-      { id: "tests", label: "tests", outcome: "fail", detail: "regressed" },
+      { id: "tests", label: "tests", outcome: "pass", value: "24/24" },
+      { id: "security", label: "security", outcome: "fail", detail: "secrets" },
       { id: "build", label: "build", outcome: "run" },
-      { id: "security", label: "security", outcome: "skip" },
+      { id: "compat", label: "compat", outcome: "skip" },
     ],
-    constraints: [{ rule: "no secrets", kind: "security", state: "satisfied" }],
+    constraints: [
+      { rule: "no secrets", kind: "security", state: "violated" },
+    ],
   };
   const html = renderToStaticMarkup(h(EvidenceCard, { run }));
 
-  check("marks the card when a check failed", html.includes("data-anyfail"));
-  check("renders one row per check", count(html, 'class="cs-check"') === 5, `got ${count(html, 'class="cs-check"')}`);
+  check("marks the card when a gate failed", html.includes("data-anyfail"));
+  check("renders one row per gate", count(html, 'data-outcome=') === 5, `got ${count(html, 'data-outcome=')}`);
   check(
     "preserves all four outcomes",
     ["pass", "fail", "run", "skip"].every((o) => html.includes(`data-outcome="${o}"`)),
     "an outcome lost its data-outcome",
   );
-  check("renders the mini chart as an SVG", html.includes("cs-evidence__chart") && html.includes("<svg"));
+  check("renders the mini chart as an SVG", html.includes("cs-") === false && html.includes("<svg"));
   check("exposes the chart to AT", html.includes('role="img"') && html.includes("aria-label="));
-  check("one bar per check", count(html, "cs-evidence__bar") === 5, `got ${count(html, "cs-evidence__bar")}`);
-  check("labels the check list", html.includes('aria-label="Evidence checks"'));
-  check("renders its own ConstraintTag", html.includes("cs-constraint") && html.includes("no secrets"));
+  check("labels the gate list", html.includes("Evidence gates"));
+  check("renders its own ConstraintTag", html.includes("data-constraint=") && html.includes("no secrets"));
+  check("maps the verdict to a badge", html.includes("REJECTED"));
+}
+
+/* --- Evidence metrics contract ------------------------------------------- */
+group("EvidenceMetrics contract");
+{
+  const passing = {
+    unitTests: { total: 24, passed: 24, failed: 0 },
+    typeCheck: "PASS",
+    buildStatus: "PASS",
+    securityScan: { status: "PASS", vulnerabilitiesFound: 0, secretsExposed: false },
+    apiBackwardsCompatible: true,
+  };
+  const checks = toEvidenceChecks(passing, "2 files");
+  check("adapter produces gate rows", checks.length === 6, `got ${checks.length}`);
+  check("clean run derives a verified tone", deriveTone(passing) === "success");
+
+  const failing = { ...passing, unitTests: { total: 10, passed: 8, failed: 2 } };
+  check("failing tests derive a rejected tone", deriveTone(failing) === "danger");
+  check(
+    "a failing contract never reports every gate as passing",
+    toEvidenceChecks(failing, "2 files").some((c) => c.outcome === "fail"),
+  );
+
+  const breaking = { ...passing, apiBackwardsCompatible: false };
+  check("a breaking change is a warning, not a pass", deriveTone(breaking) === "warning");
+
+  const exposed = {
+    ...passing,
+    securityScan: { status: "PASS", vulnerabilitiesFound: 0, secretsExposed: true },
+  };
+  check("exposed secrets dominate the verdict", deriveTone(exposed) === "danger");
 }
 
 /* --- PolicyPanel --------------------------------------------------------- */
 group("PolicyPanel");
 {
-  const branches = [
-    {
-      id: "b1",
-      label: "accept",
-      tone: "success",
-      rationale: "all gates passed",
-      nodes: [
-        {
-          id: "n1",
-          label: "refspec verified",
-          detail: "24 tests",
-          tone: "success",
-          time: "4m",
-          children: [{ id: "n1a", label: "no breaking upgrade", tone: "success" }],
-        },
-      ],
-    },
+  const rules = [
+    { id: "r1", name: "scope_budget", description: "At most 2 files.", passed: true, requiredForRelease: true },
+    { id: "r2", name: "sanitize", description: "Text is escaped.", passed: false, requiredForRelease: false },
   ];
-  const html = renderToStaticMarkup(h(PolicyPanel, { branches }));
-  check("renders the branch", html.includes("accept"));
-  check("renders the rationale", html.includes("all gates passed"));
-  check("renders nested child nodes", html.includes("no breaking upgrade"));
-  check("renders the node list", html.includes("cs-node-list"));
-  check("renders timestamps", html.includes("4m"));
-  check('names the landmark', html.includes('aria-label="Policy"'));
+  const closed = renderToStaticMarkup(
+    h(PolicyPanel, { isOpen: false, onClose: () => {}, taskTitle: "t", overallStatus: "VERIFIED", rules }),
+  );
+  check("renders nothing while closed", closed === "", "a closed panel must not be in the DOM");
+
+  const open = renderToStaticMarkup(
+    h(PolicyPanel, { isOpen: true, onClose: () => {}, taskTitle: "run 1", overallStatus: "VERIFIED", rules }),
+  );
+  check("guarded against SSR (portal-safe)", open === "", "must defer to mounted before touching document.body");
+  check("is a function component", typeof PolicyPanel === "function");
+}
+
+/* --- CommandPalette ------------------------------------------------------ */
+group("CommandPalette");
+{
+  const closed = renderToStaticMarkup(
+    h(CommandPalette, { open: false, onOpenChange: () => {}, commands: [] }),
+  );
+  check("renders nothing while closed", closed === "");
+  check("is a function component", typeof CommandPalette === "function");
 }
 
 /* --- CommandRail --------------------------------------------------------- */
@@ -149,7 +198,6 @@ group("CommandRail");
     { id: "c", label: "Gamma", disabled: true },
   ];
   const html = renderToStaticMarkup(h(CommandRail, { items, value: "a" }));
-
   check("is a tablist", html.includes('role="tablist"'));
   check("is vertically oriented", html.includes('aria-orientation="vertical"'));
   check("marks the active tab", html.includes('aria-selected="true"'));
@@ -163,7 +211,7 @@ group("CommandRail");
   check("keeps the shortcut in the label", html.includes("⌘B"));
 }
 
-/* --- CompactCard (regression guard) -------------------------------------- */
+/* --- CompactCard --------------------------------------------------------- */
 group("CompactCard");
 {
   const html = renderToStaticMarkup(

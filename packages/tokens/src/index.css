@@ -32,6 +32,7 @@
 /* 3 — Themes */
 @import "./themes/dark.css";
 @import "./themes/light.css";
+@import "./themes/aliases.css";
 
 /* 4 — Base + utilities */
 @import "./base/base.css";

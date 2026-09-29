@@ -1,34 +1,22 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-} from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { SearchIcon } from "../primitives/icons";
 import type { CommandPaletteProps, PaletteCommand } from "./types";
-import "./command-palette.css";
 
 /**
  * CommandPalette — a ⌘K action surface.
  *
- * Rendering and accessibility notes:
- *  - Mounted through a portal on <body> so it is never clipped by a panel's
- *    overflow and always sits above the rail's stacking context.
- *  - Follows the WAI-ARIA combobox pattern: the input owns `aria-expanded`,
- *    `aria-controls` and `aria-activedescendant`; results are a `listbox` of
- *    `option`s. That keeps one tab stop and lets the screen reader announce
- *    the active option without focus ever leaving the input.
- *  - A `div role="option"` is used rather than `<li>`-as-option so the selected
- *    highlight follows `aria-activedescendant` and arrow keys drive a roving
- *    active index instead of moving DOM focus.
+ * Uses the WAI-ARIA combobox pattern: the input owns `aria-expanded`,
+ * `aria-controls` and `aria-activedescendant`, and the results are a `listbox`
+ * of `option`s. That gives one tab stop and lets a screen reader announce the
+ * active option without focus ever leaving the input — which a row of real
+ * `<button>`s cannot do, because moving between them steals focus and breaks
+ * typing.
+ *
+ * Mounted through a portal on <body> so panel `overflow` can never clip it.
  */
-
 function score(command: PaletteCommand, query: string): number {
   if (!query) return 1;
   const q = query.toLowerCase();
@@ -47,24 +35,25 @@ export function CommandPalette({
   open,
   onOpenChange,
   commands,
-  placeholder = "Search commands…",
+  placeholder = "Type a command or search evidence…",
   label = "Command palette",
-  emptyMessage = "No matching commands.",
+  emptyMessage = "No matching commands found.",
 }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const restoreRef = useRef<HTMLElement | null>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => setMounted(true), []);
 
   const filtered = useMemo(() => {
-    const scored = commands
+    return commands
       .map((command) => ({ command, score: score(command, query.trim()) }))
       .filter((entry) => entry.score > 0)
-      .sort((a, b) => b.score - a.score);
-    return scored.map((entry) => entry.command);
+      .sort((a, b) => b.score - a.score)
+      .map((entry) => entry.command);
   }, [commands, query]);
 
   // Group contiguous runs for rendering headers.
@@ -78,21 +67,25 @@ export function CommandPalette({
     return out;
   }, [filtered]);
 
-  // Reset on each open.
+  // Reset on open, move focus in, and remember the trigger so focus can be
+  // handed back on close — otherwise a keyboard user is dumped at the top of
+  // the document every time they dismiss the palette.
   useEffect(() => {
     if (open) {
+      restoreRef.current = document.activeElement as HTMLElement | null;
       setQuery("");
       setActiveIndex(0);
-      // Focus after paint so the dialog is in the DOM first.
       requestAnimationFrame(() => inputRef.current?.focus());
+    } else {
+      restoreRef.current?.focus?.();
+      restoreRef.current = null;
     }
   }, [open]);
 
-  // Keep the active option scrolled into view.
   useLayoutEffect(() => {
-    const list = listRef.current;
-    const active = list?.querySelector<HTMLElement>('[data-active="true"]');
-    active?.scrollIntoView({ block: "nearest" });
+    listRef.current
+      ?.querySelector<HTMLElement>('[data-active="true"]')
+      ?.scrollIntoView({ block: "nearest" });
   }, [activeIndex, filtered]);
 
   const run = useCallback(
@@ -104,28 +97,38 @@ export function CommandPalette({
   );
 
   const onKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLDivElement>) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onOpenChange(false);
-      } else if (event.key === "ArrowDown") {
-        event.preventDefault();
-        setActiveIndex((i) => (filtered.length ? (i + 1) % filtered.length : 0));
-      } else if (event.key === "ArrowUp") {
-        event.preventDefault();
-        setActiveIndex((i) =>
-          filtered.length ? (i - 1 + filtered.length) % filtered.length : 0,
-        );
-      } else if (event.key === "Home") {
-        event.preventDefault();
-        setActiveIndex(0);
-      } else if (event.key === "End") {
-        event.preventDefault();
-        setActiveIndex(Math.max(0, filtered.length - 1));
-      } else if (event.key === "Enter") {
-        event.preventDefault();
-        const command = filtered[activeIndex];
-        if (command) run(command);
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      switch (event.key) {
+        case "Escape":
+          event.preventDefault();
+          onOpenChange(false);
+          break;
+        case "ArrowDown":
+          event.preventDefault();
+          setActiveIndex((i) => (filtered.length ? (i + 1) % filtered.length : 0));
+          break;
+        case "ArrowUp":
+          event.preventDefault();
+          setActiveIndex((i) =>
+            filtered.length ? (i - 1 + filtered.length) % filtered.length : 0,
+          );
+          break;
+        case "Home":
+          event.preventDefault();
+          setActiveIndex(0);
+          break;
+        case "End":
+          event.preventDefault();
+          setActiveIndex(Math.max(0, filtered.length - 1));
+          break;
+        case "Enter": {
+          event.preventDefault();
+          const command = filtered[activeIndex];
+          if (command) run(command);
+          break;
+        }
+        default:
+          break;
       }
     },
     [activeIndex, filtered, onOpenChange, run],
@@ -133,65 +136,73 @@ export function CommandPalette({
 
   if (!mounted || !open) return null;
 
-  // Flatten index of the active option for aria-activedescendant.
-  const activeId = filtered[activeIndex] ? `palette-opt-${filtered[activeIndex].id}` : undefined;
+  const active = filtered[activeIndex];
+  const activeId = active ? `palette-opt-${active.id}` : undefined;
   let flatIndex = -1;
 
   return createPortal(
     <div
-      className="cs-palette-root"
+      className="fixed inset-0 z-[var(--z-modal)] flex items-start justify-center pt-20"
       onKeyDown={onKeyDown}
       role="presentation"
     >
       <div
-        className="cs-palette__scrim"
-        data-open={open ? "" : undefined}
+        className="absolute inset-0 bg-black/70 backdrop-blur-md motion-safe:animate-[celastyle-fade-in_var(--duration-fast)_var(--ease-decelerate)]"
         onClick={() => onOpenChange(false)}
         aria-hidden="true"
       />
 
       <div
-        className="cs-palette"
         role="dialog"
         aria-modal="true"
         aria-label={label}
+        className="relative w-full max-w-xl overflow-hidden rounded-xl border border-[var(--border-default)] bg-[var(--bg-elevated)] shadow-2xl motion-safe:animate-[celastyle-palette-in_var(--duration-normal)_var(--ease-emphasized)]"
       >
-        <div className="cs-palette__search">
-          <SearchIcon size={16} className="cs-palette__search-icon" />
+        {/* --- Search --- */}
+        <div className="flex items-center gap-3 border-b border-[var(--border-subtle)] px-4">
+          <SearchIcon size={16} className="shrink-0 text-[var(--text-dim)]" />
           <input
             ref={inputRef}
-            className="cs-palette__input"
             type="text"
             role="combobox"
             aria-expanded="true"
             aria-controls="cs-palette-list"
             aria-activedescendant={activeId}
             aria-label={label}
+            aria-autocomplete="list"
             autoComplete="off"
             spellCheck={false}
-            placeholder={placeholder}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
               setActiveIndex(0);
             }}
+            placeholder={placeholder}
+            className="w-full bg-transparent py-3 font-mono text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-dim)]"
           />
-          <kbd className="cs-palette__esc">esc</kbd>
+          <kbd className="shrink-0 rounded border border-[var(--border-subtle)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-dim)]">
+            ESC
+          </kbd>
         </div>
 
+        {/* --- Results --- */}
         <div
           ref={listRef}
           id="cs-palette-list"
-          className="cs-palette__list celastyle-scroll"
           role="listbox"
           aria-label="Commands"
+          className="celastyle-scroll max-h-72 p-2"
         >
           {filtered.length === 0 ? (
-            <div className="cs-palette__empty">{emptyMessage}</div>
+            <div className="p-4 text-center font-mono text-xs text-[var(--text-dim)]">
+              {emptyMessage}
+            </div>
           ) : (
             groups.map((group) => (
-              <div className="cs-palette__group" key={group.group}>
-                <div className="cs-palette__group-label">{group.group}</div>
+              <div key={group.group} className={group.group === groups[0]?.group ? "" : "mt-2"}>
+                <div className="px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-[var(--text-dim)]">
+                  {group.group}
+                </div>
                 {group.items.map((command) => {
                   flatIndex += 1;
                   const isActive = flatIndex === activeIndex;
@@ -202,21 +213,26 @@ export function CommandPalette({
                       role="option"
                       aria-selected={isActive}
                       data-active={isActive ? "true" : undefined}
-                      className="cs-palette__item"
                       onMouseMove={() => setActiveIndex(flatIndex)}
                       onClick={() => run(command)}
+                      className={`flex cursor-pointer items-center justify-between gap-2 rounded-lg px-3 py-2.5 font-mono text-xs transition-colors ${
+                        isActive
+                          ? "border border-[var(--accent-lime-alpha-20)] bg-[var(--accent-lime-alpha-10)] text-[var(--accent-lime)]"
+                          : "border border-transparent text-[var(--text-primary)] hover:bg-[var(--bg-surface)]"
+                      }`}
                     >
-                      {command.icon ? (
-                        <span className="cs-palette__item-icon" aria-hidden="true">
-                          {command.icon}
-                        </span>
-                      ) : null}
-                      <span className="cs-palette__item-label">{command.label}</span>
-                      {command.hint ? (
-                        <span className="cs-palette__item-hint">{command.hint}</span>
-                      ) : null}
+                      <span className="flex min-w-0 items-center gap-2">
+                        {command.icon ? (
+                          <span aria-hidden="true" className="shrink-0">
+                            {command.icon}
+                          </span>
+                        ) : null}
+                        <span className="truncate font-medium">{command.label}</span>
+                      </span>
                       {command.shortcut ? (
-                        <kbd className="cs-palette__item-shortcut">{command.shortcut}</kbd>
+                        <kbd className="shrink-0 rounded border border-[var(--border-subtle)] bg-[var(--bg-primary)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]">
+                          {command.shortcut}
+                        </kbd>
                       ) : null}
                     </div>
                   );
@@ -226,10 +242,10 @@ export function CommandPalette({
           )}
         </div>
 
-        <div className="cs-palette__footer" aria-hidden="true">
-          <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
-          <span><kbd>↵</kbd> select</span>
-          <span><kbd>esc</kbd> close</span>
+        {/* --- Footer --- */}
+        <div className="flex items-center justify-between gap-3 border-t border-[var(--border-subtle)] bg-[var(--bg-primary)] px-4 py-2 font-mono text-[10px] text-[var(--text-dim)]">
+          <span>↑ ↓ to select · ↵ to run · esc to close</span>
+          <span>Cela Command Center</span>
         </div>
       </div>
     </div>,
@@ -237,12 +253,13 @@ export function CommandPalette({
   );
 }
 
-/* -----------------------------------------------------------------------------
+/**
  * useCommandPalette — global ⌘K / Ctrl+K binding.
- * -----------------------------------------------------------------------------
- * Lives in its own hook so the palette stays a controlled component: the host
- * decides how the palette is mounted and where its commands come from, and the
- * shortcut binding is a separate, reusable concern.
+ *
+ * Kept as a separate hook so the palette stays a controlled component.
+ *
+ * Note `toLowerCase()`: with Shift held the event reports "K", and a bare
+ * `e.key === "k"` comparison silently fails to match ⌘⇧K.
  */
 export function useCommandPalette(): {
   open: boolean;
@@ -253,7 +270,7 @@ export function useCommandPalette(): {
   const toggle = useCallback(() => setOpen((v) => !v), []);
 
   useEffect(() => {
-    const onKey = (event: globalThis.KeyboardEvent) => {
+    const onKey = (event: KeyboardEvent) => {
       if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
         toggle();

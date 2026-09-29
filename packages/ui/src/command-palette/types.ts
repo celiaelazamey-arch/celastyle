@@ -12,7 +12,7 @@ export type PaletteCommand = {
   icon?: ReactNode;
   /** Right-aligned hint, e.g. "⌘⇧P". */
   shortcut?: string;
-  /** Small trailing note, e.g. "switch theme". */
+  /** Small trailing note. */
   hint?: string;
   onSelect?: () => void;
 };
@@ -21,10 +21,7 @@ export type CommandPaletteProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   commands: readonly PaletteCommand[];
-  /** Placeholder for the filter input. */
   placeholder?: string;
-  /** Label for the search input. */
   label?: string;
-  /** Text shown when no command matches. */
   emptyMessage?: string;
 };

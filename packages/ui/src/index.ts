@@ -5,8 +5,18 @@
 
      import "@celastyle/ui/styles.css";
 
-   It pulls in @celastyle/tokens first, so the semantic layer is guaranteed to
-   be present before any component rule that references it.
+   It pulls in @celastyle/tokens first, so the semantic layer — and the
+   surface aliases the evidence patterns reference — is guaranteed to exist
+   before any utility that resolves them.
+
+   Tailwind note: the evidence patterns are written with utility classes and
+   arbitrary values, e.g. `bg-[var(--bg-surface)]`. That works without a
+   Tailwind theme block, but a consumer must ensure Tailwind *scans* this
+   package, otherwise the utilities are never generated. In Tailwind v4 that
+   means pointing the source root at node_modules:
+
+     @import "tailwindcss" source(none);
+     @source "../../node_modules/@celastyle/ui/src";
    ========================================================================== */
 
 /* --- Command Rail --- */
@@ -17,43 +27,6 @@ export type {
   CommandRailProps,
 } from "./command-rail/types";
 
-/* --- Evidence-first patterns --- */
-export { StatusBadge } from "./status-badge/StatusBadge";
-export type {
-  StatusBadgeProps,
-  StatusBadgeSize,
-  StatusBadgeTone,
-  StatusBadgeVariant,
-} from "./status-badge/types";
-
-export { ConstraintTag } from "./constraint-tag/ConstraintTag";
-export type {
-  ConstraintKind,
-  ConstraintState,
-  ConstraintTagProps,
-} from "./constraint-tag/ConstraintTag";
-
-export { EvidenceCard } from "./evidence-card/EvidenceCard";
-export type {
-  CheckOutcome,
-  EvidenceCardProps,
-  EvidenceCheck,
-  EvidenceRun,
-} from "./evidence-card/types";
-
-export { PolicyPanel } from "./policy-panel/PolicyPanel";
-export type {
-  PolicyBranch,
-  PolicyNode,
-  PolicyPanelProps,
-} from "./policy-panel/types";
-
-export { CommandPalette, useCommandPalette } from "./command-palette/CommandPalette";
-export type {
-  CommandPaletteProps,
-  PaletteCommand,
-} from "./command-palette/types";
-
 /* --- Compact Card --- */
 export { CompactCard } from "./compact-card/CompactCard";
 export type {
@@ -62,6 +35,39 @@ export type {
   CompactCardProps,
   CompactCardStatus,
 } from "./compact-card/types";
+
+/* --- Evidence patterns --- */
+export { StatusBadge, STATUS_CONFIG, type EvidenceStatus, type StatusBadgeProps } from "./status-badge/StatusBadge";
+export {
+  ConstraintTag,
+  type ConstraintKind,
+  type ConstraintState,
+  type ConstraintTagProps,
+} from "./constraint-tag/ConstraintTag";
+
+export { EvidenceCard } from "./evidence-card/EvidenceCard";
+export type {
+  CheckOutcome,
+  EvidenceCardProps,
+  EvidenceCheck,
+  EvidenceConstraint,
+  EvidenceRun,
+} from "./evidence-card/types";
+export {
+  deriveTone,
+  toEvidenceChecks,
+  type EvidenceMetrics,
+  type GateResult,
+} from "./evidence-card/metrics";
+
+export { PolicyPanel } from "./policy-panel/PolicyPanel";
+export type { PolicyPanelProps, PolicyRule } from "./policy-panel/types";
+
+export {
+  CommandPalette,
+  useCommandPalette,
+} from "./command-palette/CommandPalette";
+export type { CommandPaletteProps, PaletteCommand } from "./command-palette/types";
 
 /* --- Primitives --- */
 export { Icon, type IconProps } from "./primitives/Icon";

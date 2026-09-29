@@ -7,7 +7,12 @@
    to :root; they coexist because the names never collide (see below).
    ========================================================================== */
 
-@import "tailwindcss";
+/* Point Tailwind at the UI package so the evidence patterns' utility classes
+   (bg-[var(--bg-surface)], etc.) are actually generated. Without this the
+   components render with no styles at all. */
+@import "tailwindcss" source(none);
+@source "../../../packages/ui/src";
+
 @import "@celastyle/ui/styles.css";
 
 /* =============================================================================
@@ -102,6 +107,39 @@
 }
 
 @layer components {
+  /* Keyframes used by the evidence patterns. Declared at the top level of this
+     file because @keyframes cannot be nested inside a style rule — and because
+     these are referenced from Tailwind's `animate-[...]` arbitrary values, they
+     have to exist where the utility layer can see them. */
+  @keyframes celastyle-slide-in {
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes celastyle-palette-in {
+    from {
+      opacity: 0;
+      transform: translateY(-8px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes celastyle-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
   /* A panel: the bounded unit of the workspace. */
   .cc-panel {
     display: flex;

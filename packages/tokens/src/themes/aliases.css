@@ -1,0 +1,63 @@
+/* =============================================================================
+   Surface aliases
+   -----------------------------------------------------------------------------
+   A second naming vocabulary for the same semantic tokens.
+
+   The evidence patterns are written in a surface-oriented language —
+   `bg-surface`, `bg-elevated`, `text-dim` — because that is the vocabulary of
+   the evidence domain, not of the colour layer. Rather than duplicate values,
+   these aliases point at the canonical semantic tokens.
+
+   Why this matters more than it looks: these names are referenced from
+   component code that also carries hardcoded fallbacks, e.g.
+
+     bg-[var(--bg-surface,#12151e)]
+
+   If the variable is undefined, that fallback silently takes over and the
+   component renders at a fixed colour — it *looks* fine, and it no longer
+   responds to the theme. Defining the alias here means the fallback is never
+   reached, and switching `data-theme` still re-themes every one of them.
+
+   The fallback in the source stays as a safety net for a consumer who forgets
+   to import the tokens at all; the alias is what makes it a fallback rather
+   than the normal path.
+   ========================================================================== */
+
+:root {
+  /* --- Surfaces, ordered from furthest back to nearest --- */
+  --bg-primary: var(--surface-canvas); /* page + wells + inset regions */
+  --bg-surface: var(--surface-raised); /* cards, the default container */
+  --bg-elevated: var(--surface-overlay); /* modals, palettes, popovers */
+  --bg-sunken: var(--surface-sunken);
+
+  /* --- Text --- */
+  --text-dim: var(--text-tertiary); /* ids, timestamps, micro-labels */
+  --text-dim-strong: var(--text-secondary);
+
+  /* --- Accent, in the name the evidence patterns use --- */
+  --accent-lime: var(--accent);
+  --accent-lime-hover: var(--accent-hover);
+  --accent-lime-contrast: var(--accent-contrast);
+  --accent-lime-alpha-05: var(--lime-a05);
+  --accent-lime-alpha-10: var(--accent-subtle);
+  --accent-lime-alpha-20: var(--accent-muted);
+  --accent-lime-alpha-30: var(--lime-a30);
+  --accent-lime-alpha-40: var(--lime-a40);
+
+  /* --- Status, as flat names the evidence patterns expect --- */
+  --status-pass: var(--status-success);
+  --status-fail: var(--status-danger);
+  --status-warn: var(--status-warning);
+  --status-info: var(--status-info);
+  --status-pending: var(--status-neutral);
+
+  --status-pass-alpha-10: var(--status-success-subtle);
+  --status-fail-alpha-10: var(--status-danger-subtle);
+  --status-warn-alpha-10: var(--status-warning-subtle);
+  --status-info-alpha-10: var(--status-info-subtle);
+
+  --status-pass-alpha-30: var(--status-success-muted);
+  --status-fail-alpha-30: var(--status-danger-muted);
+  --status-warn-alpha-30: var(--status-warning-muted);
+  --status-info-alpha-30: var(--status-info-muted);
+}

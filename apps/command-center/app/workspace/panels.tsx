@@ -9,7 +9,7 @@ import {
   TerminalIcon,
 } from "@celastyle/ui";
 import { ALERTS, NODES, OVERVIEW_STATS, SESSIONS, SIGNALS } from "./data";
-import { EVIDENCE_RUNS, EVIDENCE_SUMMARY, POLICY_BRANCHES } from "./evidence";
+import { EVIDENCE_SUMMARY, POLICY_RULES, RUNS } from "./evidence";
 
 /* =============================================================================
    Panels
@@ -201,37 +201,62 @@ export function AlertsPanel() {
    ============================================================================= */
 
 export function EvidencePanel() {
+  const [inspecting, setInspecting] = useState<string | null>(null);
+
+  const activeRun = RUNS.find((r) => r.id === inspecting) ?? null;
+  const rules = inspecting ? (POLICY_RULES[inspecting] ?? []) : [];
+
   return (
-    <div className="flex min-h-0 gap-[var(--panel-gap)]">
-      <div className="celastyle-scroll min-h-0 min-w-0 flex-1">
+    <div className="flex min-h-0 flex-col gap-[var(--panel-gap)]">
+      <div className="celastyle-scroll min-h-0 flex-1">
         <div className="flex flex-col gap-[var(--panel-gap)]">
           {/* Summary chips */}
-          <div className="flex items-center gap-2">
-            <StatusBadge tone="success" size="md">
-              {EVIDENCE_SUMMARY.verified} verified
-            </StatusBadge>
-            <StatusBadge tone="danger" size="md">
-              {EVIDENCE_SUMMARY.rejected} rejected
-            </StatusBadge>
-            <StatusBadge tone="warning" size="md" live>
-              {EVIDENCE_SUMMARY.pending} in flight
-            </StatusBadge>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge
+              status="VERIFIED"
+              label={`${EVIDENCE_SUMMARY.verified} verified`}
+            />
+            <StatusBadge
+              status="REJECTED"
+              label={`${EVIDENCE_SUMMARY.rejected} rejected`}
+            />
+            <StatusBadge
+              status="PENDING"
+              label={`${EVIDENCE_SUMMARY.inFlight} in flight`}
+            />
             <div className="celastyle-spacer" />
             <span className="celastyle-label">evidence graph</span>
           </div>
 
-          {EVIDENCE_RUNS.map((run) => (
-            <EvidenceCard key={run.id} run={run} />
+          {RUNS.map((run) => (
+            <EvidenceCard
+              key={run.id}
+              run={{ ...run, onInspectGraph: setInspecting }}
+            />
           ))}
         </div>
       </div>
 
-      {/* Policy rail */}
+      {/* Policy slide-over — adjudicates whichever run was inspected. */}
       <PolicyPanel
-        title="Decision tree"
-        description="Why each run was accepted or rejected."
-        branches={POLICY_BRANCHES}
-        footer={<span>graph · 5 runs · 3 branches</span>}
+        isOpen={activeRun !== null}
+        onClose={() => setInspecting(null)}
+        taskTitle={activeRun ? `${activeRun.id} · ${activeRun.intent}` : ""}
+        overallStatus={
+          activeRun?.tone === "success"
+            ? "VERIFIED"
+            : activeRun?.tone === "danger"
+              ? "REJECTED"
+              : "PENDING"
+        }
+        rules={rules}
+        footer={
+          activeRun ? (
+            <span className="font-mono text-[10px] text-[var(--text-dim)]">
+              run {activeRun.id} · {activeRun.duration}
+            </span>
+          ) : null
+        }
       />
     </div>
   );
