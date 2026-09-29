@@ -1,0 +1,232 @@
+/* =============================================================================
+   Command Palette
+   -----------------------------------------------------------------------------
+   Floats above the workspace, so it uses the one shadow in the elevation scale
+   that is meant for exactly this: --shadow-xl, over a scrim that dims the
+   canvas to --surface-sunken.
+   ========================================================================== */
+
+.cs-palette-root {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+
+  display: flex;
+  justify-content: center;
+  /* Sit high on the viewport — a command surface belongs near the top, and it
+     keeps the keyboard-accessible portion of the results near the input. */
+  align-items: flex-start;
+  padding: 12vh var(--space-4) var(--space-4);
+}
+
+.cs-palette__scrim {
+  position: absolute;
+  inset: 0;
+  background-color: rgb(0 0 0 / 55%);
+  animation: celastyle-palette-fade var(--duration-fast) var(--ease-decelerate);
+}
+
+@keyframes celastyle-palette-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.cs-palette {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 560px;
+  max-height: 60vh;
+
+  background-color: var(--surface-overlay);
+  border: var(--border-width-hairline) solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+  overflow: hidden;
+
+  animation: celastyle-palette-in var(--duration-normal) var(--ease-emphasized);
+}
+
+@keyframes celastyle-palette-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* --- Search -------------------------------------------------------------- */
+
+.cs-palette__search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2-5);
+  flex-shrink: 0;
+  padding: var(--space-3) var(--space-3-5);
+  border-bottom: var(--border-width-hairline) solid var(--border-subtle);
+}
+
+.cs-palette__search-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.cs-palette__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  line-height: var(--leading-snug);
+  color: var(--text-primary);
+}
+
+.cs-palette__input::placeholder {
+  color: var(--text-muted);
+}
+
+.cs-palette__esc {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  background-color: var(--surface-inset);
+  border: var(--border-width-hairline) solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  padding: 1px var(--space-1-5);
+}
+
+/* --- List ---------------------------------------------------------------- */
+
+.cs-palette__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--space-2);
+}
+
+.cs-palette__empty {
+  padding: var(--space-6) var(--space-3);
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
+
+.cs-palette__group + .cs-palette__group {
+  margin-top: var(--space-2);
+}
+
+.cs-palette__group-label {
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* --- Option -------------------------------------------------------------- */
+
+.cs-palette__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2-5);
+
+  padding: var(--space-2) var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+
+.cs-palette__item[data-active] {
+  background-color: var(--surface-raised);
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 var(--border-width-hairline) var(--border-accent);
+}
+
+.cs-palette__item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.cs-palette__item[data-active] .cs-palette__item-icon {
+  color: var(--accent);
+}
+
+.cs-palette__item-icon .cs-icon {
+  width: 100%;
+  height: 100%;
+}
+
+.cs-palette__item-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.cs-palette__item-hint {
+  flex-shrink: 0;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.cs-palette__item-shortcut {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-tertiary);
+  background-color: var(--surface-inset);
+  border: var(--border-width-hairline) solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  padding: 1px var(--space-1-5);
+}
+
+/* --- Footer -------------------------------------------------------------- */
+
+.cs-palette__footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-shrink: 0;
+  padding: var(--space-2) var(--space-3-5);
+  border-top: var(--border-width-hairline) solid var(--border-subtle);
+  background-color: var(--surface-base);
+
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.cs-palette__footer span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.cs-palette__footer kbd {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-tertiary);
+  background-color: var(--surface-inset);
+  border: var(--border-width-hairline) solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  padding: 0 var(--space-1);
+}

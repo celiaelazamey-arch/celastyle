@@ -78,6 +78,13 @@
   --status-info-subtle: var(--status-info-a10);
   --status-info-muted: var(--status-info-a30);
 
+  /* Neutral — a declared state that is simply not colour-coded yet ("pending",
+     "unknown", "not evaluated"). Badges need a real slot for this; without it
+     every component reaches for --text-muted and the states drift apart. */
+  --status-neutral: var(--graphite-300);
+  --status-neutral-subtle: rgb(255 255 255 / 5%);
+  --status-neutral-muted: rgb(255 255 255 / 14%);
+
   /* --- Skeleton / loading --- */
   --skeleton-base: var(--graphite-850);
   --skeleton-sheen: rgb(255 255 255 / 6%);

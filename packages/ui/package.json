@@ -16,7 +16,8 @@
     "*.css"
   ],
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node test/build.mjs && node test/render.test.mjs"
   },
   "peerDependencies": {
     "react": "^18.2.0 || ^19.0.0",

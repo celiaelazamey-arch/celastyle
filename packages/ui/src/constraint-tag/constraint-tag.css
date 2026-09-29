@@ -1,0 +1,106 @@
+/* =============================================================================
+   Constraint Tag
+   -----------------------------------------------------------------------------
+   Reads as a *declaration* rather than a verdict: a monospace rule text, a
+   leading slash, and a state expressed by the leading edge only. The kind
+   name is the real label; the colour merely reinforces it.
+   ========================================================================== */
+
+.cs-constraint {
+  --_state: var(--status-neutral);
+  --_state-subtle: var(--status-neutral-subtle);
+  --_state-muted: var(--status-neutral-muted);
+
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1-5);
+
+  /* Sits flush inside a denser row than a badge does, so it gets tighter
+     padding and no rounded container — a chip here would compete with the
+     StatusBadge sitting next to it. */
+  padding: var(--space-1) var(--space-1-5);
+  max-width: 100%;
+
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
+  color: var(--text-secondary);
+
+  background-color: var(--_state-subtle);
+  border: var(--border-width-hairline) solid var(--_state-muted);
+  border-radius: var(--radius-xs);
+}
+
+.cs-constraint[data-state="satisfied"] {
+  --_state: var(--status-success);
+  --_state-subtle: var(--status-success-subtle);
+  --_state-muted: var(--status-success-muted);
+}
+
+.cs-constraint[data-state="violated"] {
+  --_state: var(--status-danger);
+  --_state-subtle: var(--status-danger-subtle);
+  --_state-muted: var(--status-danger-muted);
+}
+
+.cs-constraint[data-state="pending"] {
+  --_state: var(--status-neutral);
+  --_state-subtle: var(--status-neutral-subtle);
+  --_state-muted: var(--status-neutral-muted);
+}
+
+/* --- Mark ----------------------------------------------------------------
+   A leading bar rather than a dot: the constraint is a standing condition, not
+   a momentary status, and the vertical form separates the two at a glance.
+   ---------------------------------------------------------------------- */
+
+.cs-constraint__mark {
+  align-self: stretch;
+  width: 2px;
+  min-height: 10px;
+  margin-block: 1px;
+  border-radius: var(--radius-full);
+  background-color: var(--_state);
+  flex-shrink: 0;
+}
+
+.cs-constraint[data-state="pending"] .cs-constraint__mark {
+  animation: var(--motion-pulse-live);
+}
+
+/* --- Kind ---------------------------------------------------------------- */
+
+.cs-constraint__kind {
+  flex-shrink: 0;
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--_state);
+}
+
+/* --- Rule ---------------------------------------------------------------- */
+
+.cs-constraint__rule {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+/* --- Value --------------------------------------------------------------- */
+
+.cs-constraint__value {
+  flex-shrink: 0;
+  margin-left: var(--space-1);
+  padding-left: var(--space-2);
+  border-left: var(--border-width-hairline) solid var(--_state-muted);
+
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--_state);
+  font-weight: var(--font-weight-semibold);
+}

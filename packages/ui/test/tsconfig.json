@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "skipLibCheck": true,
+    "strict": true,
+    "rootDir": "../src",
+    "outDir": "../.test-build",
+    "types": []
+  },
+  "include": ["../src/**/*.tsx", "../src/**/*.ts"]
+}

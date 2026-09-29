@@ -13,6 +13,7 @@ import type {
 
 export const PANEL_IDS = {
   overview: "panel-overview",
+  evidence: "panel-evidence",
   signals: "panel-signals",
   nodes: "panel-nodes",
   sessions: "panel-sessions",
@@ -31,31 +32,38 @@ export const RAIL_ITEMS: CommandRailItem[] = [
     shortcut: "⌘1",
   },
   {
+    id: "evidence",
+    label: "Evidence",
+    panelId: PANEL_IDS.evidence,
+    badge: 5,
+    shortcut: "⌘2",
+  },
+  {
     id: "signals",
     label: "Signals",
     panelId: PANEL_IDS.signals,
     badge: 12,
-    shortcut: "⌘2",
+    shortcut: "⌘3",
   },
   {
     id: "nodes",
     label: "Nodes",
     panelId: PANEL_IDS.nodes,
-    shortcut: "⌘3",
+    shortcut: "⌘4",
   },
   {
     id: "sessions",
     label: "Sessions",
     panelId: PANEL_IDS.sessions,
     badge: 3,
-    shortcut: "⌘4",
+    shortcut: "⌘5",
   },
   {
     id: "alerts",
     label: "Alerts",
     panelId: PANEL_IDS.alerts,
     badge: 2,
-    shortcut: "⌘5",
+    shortcut: "⌘6",
   },
   {
     id: "settings",

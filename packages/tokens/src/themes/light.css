@@ -73,6 +73,11 @@
   --status-info-subtle: var(--status-info-a15);
   --status-info-muted: var(--status-info-a30);
 
+  /* Neutral */
+  --status-neutral: var(--graphite-600);
+  --status-neutral-subtle: rgb(11 15 19 / 5%);
+  --status-neutral-muted: rgb(11 15 19 / 14%);
+
   /* --- Skeleton --- */
   --skeleton-base: var(--graphite-100);
   --skeleton-sheen: rgb(255 255 255 / 60%);

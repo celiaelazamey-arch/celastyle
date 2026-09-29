@@ -75,6 +75,67 @@ Interaction uses the **stretched-trigger** pattern: the title is a real `<button
 `::after` covers the card. This keeps the semantics honest — it is in the tab order with a
 genuine accessible name — while leaving the card free to hold its own controls in `trailing`.
 
+## Evidence patterns
+
+The layer that turns the design system into an evidence-first OS. Everything here is
+**data-first**: components accept plain, serialisable data and own their own rendering, so a
+fixture never has to pre-build elements.
+
+### StatusBadge & ConstraintTag
+
+Two deliberately different units:
+
+- A **StatusBadge** is an *outcome* — verified, rejected, pending. Six tones mapping to the
+  `--status-*` token triplets, in three weights (`subtle` / `solid` / `outline`).
+- A **ConstraintTag** is a *rule* — "no secrets in build output", "≤ 2 files per run" — plus
+  whether it currently holds. It is monospace, flush, and led by a vertical mark rather than
+  sitting in a rounded chip.
+
+Keeping them apart is what stops an evidence view from reading as a wall of undifferentiated
+chips. The `--status-neutral` triplet was added to the token layer for this: without it,
+"pending" had no home and every component reached for `--text-muted`, and the states drifted
+apart.
+
+### EvidenceCard
+
+A composite record of one run: intent, scope, the five ordered gates, a verdict, and the
+constraints checked along the way.
+
+Deliberately **not** a stack of badges — the five checks are an *ordered list of gates*, so
+they render as a pipeline with distinct glyphs (`✓ ✕ ◐ —`). Each outcome maps to a colour
+*and* a distinct mark, so meaning survives greyscale and colour-blindness. The mini chart is
+one `<rect>` per check inside a single SVG with `role="img"` and an `aria-label`, rather than a
+row of styled divs, so it renders as an actual bar and announces as one unit.
+
+### PolicyPanel
+
+The side rail that answers *"why was this accepted?"* without leaving the surface. Branches
+are tone-coded, with nested decision nodes threaded by a continuous guide rail so the tree
+reads as a tree.
+
+### CommandPalette (⌘K)
+
+Mounted through a portal on `<body>` so it is never clipped by a panel's `overflow` and always
+clears the rail's stacking context.
+
+Follows the WAI-ARIA **combobox** pattern: the input owns `aria-expanded`, `aria-controls` and
+`aria-activedescendant`; results are a `listbox` of `option`s. One tab stop, and the screen
+reader announces the active option without focus ever leaving the input. `useCommandPalette()`
+supplies the global ⌘K/Ctrl+K binding, kept separate so the palette stays a controlled
+component.
+
+## Testing
+
+```bash
+npm test    # render tests across @celastyle/ui
+```
+
+The render tests render each component to static markup and assert on the output rather than
+on implementation details. That is aimed at what actually regresses silently in this package:
+the ARIA semantics and the data rendering. A missing `data-outcome`, a second `tabindex="0"`
+appearing on the rail, or a card quietly falling back to `role="button"` all pass a type check
+and fail these.
+
 ## Tailwind integration
 
 Tailwind v4 is configured CSS-first. The app maps semantic tokens into Tailwind's `--color-*`

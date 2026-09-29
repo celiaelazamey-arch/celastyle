@@ -1,23 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { CompactCard, TerminalIcon } from "@celastyle/ui";
 import {
-  ALERTS,
-  NODES,
-  OVERVIEW_STATS,
-  SESSIONS,
-  SIGNALS,
-} from "./data";
+  CompactCard,
+  EvidenceCard,
+  PolicyPanel,
+  StatusBadge,
+  TerminalIcon,
+} from "@celastyle/ui";
+import { ALERTS, NODES, OVERVIEW_STATS, SESSIONS, SIGNALS } from "./data";
+import { EVIDENCE_RUNS, EVIDENCE_SUMMARY, POLICY_BRANCHES } from "./evidence";
 
-/* -----------------------------------------------------------------------------
- * Panels
- *
- * Each panel is the same shape — a bordered unit that owns its own scroll. The
- * interesting part is that none of them declare a colour: every status, border
- * and surface comes from the semantic tokens, so the light/dark switch needs no
- * per-panel branch.
- * -------------------------------------------------------------------------- */
+/* =============================================================================
+   Panels
+   ============================================================================= */
 
 export function OverviewPanel() {
   const [selected, setSelected] = useState<string | null>("sig-3");
@@ -29,14 +25,10 @@ export function OverviewPanel() {
           <span className="celastyle-label">{stat.label}</span>
           <span className="cc-stat__value">
             {stat.value}
-            {stat.unit ? (
-              <span className="cc-stat__unit"> {stat.unit}</span>
-            ) : null}
+            {stat.unit ? <span className="cc-stat__unit"> {stat.unit}</span> : null}
           </span>
           {stat.delta ? (
-            <span
-              className={`cc-stat__delta cc-stat__delta--${stat.direction ?? "up"}`}
-            >
+            <span className={`cc-stat__delta cc-stat__delta--${stat.direction ?? "up"}`}>
               {stat.direction === "down" ? "▲" : "▼"} {stat.delta}
               <span className="text-ink-muted">vs 1h ago</span>
             </span>
@@ -80,15 +72,12 @@ export function SignalsPanel() {
     <div className="cc-panel">
       <div className="cc-panel__header">
         <h2 className="cc-panel__title">Signal feed</h2>
-        <span className="celastyle-badge bg-signal-soft text-signal">
-          {SIGNALS.length}
-        </span>
+        <span className="celastyle-label text-signal">{SIGNALS.length}</span>
         <div className="celastyle-spacer" />
         <span className="celastyle-live-dot text-[var(--text-2xs)] text-ink-tertiary">
           live
         </span>
       </div>
-
       <div className="cc-panel__body flex flex-col gap-[var(--card-gap)]">
         {SIGNALS.map((signal) => (
           <CompactCard
@@ -102,11 +91,7 @@ export function SignalsPanel() {
               { label: "source", value: signal.source },
               { label: "target", value: signal.target, highlight: true },
             ]}
-            trailing={
-              signal.highlight ? (
-                <span className="celastyle-label text-signal">priority</span>
-              ) : null
-            }
+            trailing={signal.highlight ? <span className="celastyle-label text-signal">priority</span> : null}
           >
             {signal.body}
           </CompactCard>
@@ -126,9 +111,6 @@ export function NodesPanel() {
         <div className="celastyle-spacer" />
         <span className="celastyle-label">{NODES.length} nodes</span>
       </div>
-
-      {/* Grid at wide widths so the fleet can be scanned by column, list on
-          narrow ones so a row never truncates its own data lane. */}
       <div className="cc-panel__body grid grid-cols-1 gap-[var(--card-gap)] xl:grid-cols-2">
         {NODES.map((node) => (
           <CompactCard
@@ -142,11 +124,7 @@ export function NodesPanel() {
             data={[
               { label: "cpu", value: node.cpu },
               { label: "mem", value: node.mem },
-              {
-                label: "up",
-                value: node.uptime,
-                highlight: node.status !== "success",
-              },
+              { label: "up", value: node.uptime, highlight: node.status !== "success" },
             ]}
           />
         ))}
@@ -165,7 +143,6 @@ export function SessionsPanel() {
         <div className="celastyle-spacer" />
         <span className="celastyle-label">{SESSIONS.length} open</span>
       </div>
-
       <div className="cc-panel__body flex flex-col gap-[var(--card-gap)]">
         {SESSIONS.map((session) => (
           <CompactCard
@@ -198,14 +175,11 @@ export function AlertsPanel() {
         <div className="celastyle-spacer" />
         <span className="celastyle-label">{ALERTS.length} unacknowledged</span>
       </div>
-
       <div className="cc-panel__body flex flex-col gap-[var(--card-gap)]">
         {ALERTS.map((alert) => (
           <CompactCard
             key={alert.id}
             title={alert.title}
-            /* Tinted here because every alert is already a narrowed field —
-               the row is an exception, so a dot alone would under-signal it. */
             tint
             status={alert.status}
             selected={selected === alert.id}
@@ -222,21 +196,57 @@ export function AlertsPanel() {
   );
 }
 
+/* =============================================================================
+   Evidence panel — the evidence-first surface
+   ============================================================================= */
+
+export function EvidencePanel() {
+  return (
+    <div className="flex min-h-0 gap-[var(--panel-gap)]">
+      <div className="celastyle-scroll min-h-0 min-w-0 flex-1">
+        <div className="flex flex-col gap-[var(--panel-gap)]">
+          {/* Summary chips */}
+          <div className="flex items-center gap-2">
+            <StatusBadge tone="success" size="md">
+              {EVIDENCE_SUMMARY.verified} verified
+            </StatusBadge>
+            <StatusBadge tone="danger" size="md">
+              {EVIDENCE_SUMMARY.rejected} rejected
+            </StatusBadge>
+            <StatusBadge tone="warning" size="md" live>
+              {EVIDENCE_SUMMARY.pending} in flight
+            </StatusBadge>
+            <div className="celastyle-spacer" />
+            <span className="celastyle-label">evidence graph</span>
+          </div>
+
+          {EVIDENCE_RUNS.map((run) => (
+            <EvidenceCard key={run.id} run={run} />
+          ))}
+        </div>
+      </div>
+
+      {/* Policy rail */}
+      <PolicyPanel
+        title="Decision tree"
+        description="Why each run was accepted or rejected."
+        branches={POLICY_BRANCHES}
+        footer={<span>graph · 5 runs · 3 branches</span>}
+      />
+    </div>
+  );
+}
+
 export function SettingsPanel() {
   const [density, setDensity] = useState<"compact" | "comfortable">("compact");
-  const [reduceMotion, setReduceMotion] = useState(false);
 
   return (
     <div className="cc-panel max-w-2xl">
       <div className="cc-panel__header">
         <h2 className="cc-panel__title">Workspace settings</h2>
       </div>
-
       <div className="cc-panel__body flex flex-col gap-4">
-        <SettingRow
-          label="Card density"
-          hint="Controls the padding scale used by every Compact Card."
-        >
+        <SettingRow label="Card density" hint="Padding scale for every Compact Card.">
           <SegmentedControl
             value={density}
             onChange={setDensity}
@@ -246,22 +256,7 @@ export function SettingsPanel() {
             ]}
           />
         </SettingRow>
-
-        <SettingRow
-          label="Reduce motion"
-          hint="Stops the live-indicator breath and skeleton shimmer."
-        >
-          <Switch
-            checked={reduceMotion}
-            onChange={setReduceMotion}
-            label="Reduce motion"
-          />
-        </SettingRow>
-
-        <SettingRow
-          label="Preview"
-          hint="The same card rendered at the density selected above."
-        >
+        <SettingRow label="Preview" hint="The same card at the selected density.">
           <div className="w-full">
             <CompactCard
               title="edge-us-east-1-a"
@@ -272,7 +267,7 @@ export function SettingsPanel() {
                 { label: "mem", value: "82%", highlight: true },
               ]}
             >
-              Rendered at {density} density to preview the setting.
+              Rendered at {density} density.
             </CompactCard>
           </div>
         </SettingRow>
@@ -332,39 +327,5 @@ function SegmentedControl<T extends string>({
         </button>
       ))}
     </div>
-  );
-}
-
-function Switch({
-  checked,
-  onChange,
-  label,
-}: {
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={() => onChange(!checked)}
-      className={`relative h-5 w-9 shrink-0 cursor-pointer rounded-full border transition-colors ${
-        checked
-          ? "border-signal bg-signal"
-          : "border-edge-default bg-surface-inset"
-      }`}
-    >
-      <span
-        aria-hidden="true"
-        className={`absolute top-0.5 h-3.5 w-3.5 rounded-full transition-[left] duration-150 ${
-          checked
-            ? "left-[18px] bg-signal-contrast"
-            : "left-0.5 bg-ink-muted"
-        }`}
-      />
-    </button>
   );
 }

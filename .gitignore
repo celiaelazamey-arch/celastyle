@@ -9,6 +9,7 @@ build/
 .next/
 out/
 *.tsbuildinfo
+.test-build/
 
 # Environment
 .env

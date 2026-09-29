@@ -17,6 +17,43 @@ export type {
   CommandRailProps,
 } from "./command-rail/types";
 
+/* --- Evidence-first patterns --- */
+export { StatusBadge } from "./status-badge/StatusBadge";
+export type {
+  StatusBadgeProps,
+  StatusBadgeSize,
+  StatusBadgeTone,
+  StatusBadgeVariant,
+} from "./status-badge/types";
+
+export { ConstraintTag } from "./constraint-tag/ConstraintTag";
+export type {
+  ConstraintKind,
+  ConstraintState,
+  ConstraintTagProps,
+} from "./constraint-tag/ConstraintTag";
+
+export { EvidenceCard } from "./evidence-card/EvidenceCard";
+export type {
+  CheckOutcome,
+  EvidenceCardProps,
+  EvidenceCheck,
+  EvidenceRun,
+} from "./evidence-card/types";
+
+export { PolicyPanel } from "./policy-panel/PolicyPanel";
+export type {
+  PolicyBranch,
+  PolicyNode,
+  PolicyPanelProps,
+} from "./policy-panel/types";
+
+export { CommandPalette, useCommandPalette } from "./command-palette/CommandPalette";
+export type {
+  CommandPaletteProps,
+  PaletteCommand,
+} from "./command-palette/types";
+
 /* --- Compact Card --- */
 export { CompactCard } from "./compact-card/CompactCard";
 export type {
