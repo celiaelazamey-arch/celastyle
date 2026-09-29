@@ -1,0 +1,32 @@
+/* =============================================================================
+   Graphite — the neutral substrate
+   -----------------------------------------------------------------------------
+   A cool-cast neutral ramp. Deliberately desaturated (saturation stays under
+   ~8%) so the Lime accent is the only thing on screen allowed to carry chroma.
+   Every value is tuned for a dark command-center canvas.
+
+   Usage: raw ramp for prototyping and charts.
+   Consume the semantic layer (`--surface-*`, `--text-*`, `--border-*`) in
+   components — never the raw ramp. See src/themes/dark.css.
+   ========================================================================== */
+
+:root {
+  /* --- Light end of the ramp (text on dark surfaces) --- */
+  --graphite-0: #ffffff;
+  --graphite-25: #fafbfc;
+  --graphite-50: #f4f6f7;
+  --graphite-100: #e6e9ec;
+  --graphite-200: #cfd5da;
+  --graphite-300: #adb6be;
+  --graphite-400: #86929c;
+  --graphite-500: #66717b;
+  --graphite-600: #4c555e;
+  --graphite-700: #373f47;
+
+  /* --- Dark end of the ramp (the canvas) --- */
+  --graphite-800: #242b32;
+  --graphite-850: #1a2027;
+  --graphite-900: #12171d;
+  --graphite-950: #0b0f13;
+  --graphite-1000: #060809;
+}

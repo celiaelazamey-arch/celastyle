@@ -1,0 +1,181 @@
+/* =============================================================================
+   CelaStyle Command Center — app stylesheet
+   -----------------------------------------------------------------------------
+   Load order matters: Tailwind first so its cascade layers (theme, base,
+   components, utilities) are established, then the design system's own CSS on
+   top. Both Tailwind's `@theme` and the token package write custom properties
+   to :root; they coexist because the names never collide (see below).
+   ========================================================================== */
+
+@import "tailwindcss";
+@import "@celastyle/ui/styles.css";
+
+/* =============================================================================
+   Token bridge
+   -----------------------------------------------------------------------------
+   Tailwind v4 generates utilities from the `--color-*` namespace. Mapping the
+   design system's *semantic* tokens into it gives the familiar `bg-surface-raised`
+   / `text-ink-primary` spellings while keeping a single source of truth.
+
+   Why the renames: Tailwind's colour utilities all render as `text-*` or
+   `bg-*`. A token named `--text-primary` would produce `text-text-primary`, and
+   `--border-default` would produce `border-border-default`. The three prefixed
+   names below read correctly in both positions:
+
+     --text-*   -> --color-ink-*    ->  text-ink-primary
+     --border-* -> --color-edge-*   ->  border-edge-default
+     --accent   -> --color-signal-* ->  bg-signal, text-signal
+
+   The value side is always `var(--semantic-token)`, never a literal, so the
+   light/dark themes in @celastyle/tokens flow straight through — switching
+   `data-theme` on <html> re-themes every utility at once.
+   ========================================================================== */
+
+@theme {
+  /* --- Surfaces --- */
+  --color-surface-canvas: var(--surface-canvas);
+  --color-surface-base: var(--surface-base);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-overlay: var(--surface-overlay);
+  --color-surface-inset: var(--surface-inset);
+
+  /* --- Text --- */
+  --color-ink-primary: var(--text-primary);
+  --color-ink-secondary: var(--text-secondary);
+  --color-ink-tertiary: var(--text-tertiary);
+  --color-ink-muted: var(--text-muted);
+  --color-ink-inverse: var(--text-inverse);
+
+  /* --- Borders --- */
+  --color-edge-subtle: var(--border-subtle);
+  --color-edge-default: var(--border-default);
+  --color-edge-strong: var(--border-strong);
+
+  /* --- Accent --- */
+  --color-signal: var(--accent);
+  --color-signal-soft: var(--accent-subtle);
+  --color-signal-muted: var(--accent-muted);
+  --color-signal-contrast: var(--accent-contrast);
+
+  /* --- Status --- */
+  --color-ok: var(--status-success);
+  --color-ok-soft: var(--status-success-subtle);
+  --color-warn: var(--status-warning);
+  --color-warn-soft: var(--status-warning-subtle);
+  --color-crit: var(--status-danger);
+  --color-crit-soft: var(--status-danger-subtle);
+  --color-info: var(--status-info);
+  --color-info-soft: var(--status-info-subtle);
+
+  /* --- Raw ramps ---
+     Exposed for charts and status legends, which legitimately need raw hues. */
+  --color-graphite-400: var(--graphite-400);
+  --color-graphite-600: var(--graphite-600);
+  --color-graphite-800: var(--graphite-800);
+  --color-lime-300: var(--lime-300);
+  --color-lime-400: var(--lime-400);
+  --color-lime-500: var(--lime-500);
+}
+
+/* =============================================================================
+   App shell
+   -----------------------------------------------------------------------------
+   The workspace is a fixed full-height grid: rail | main. Panels scroll
+   independently inside `main`, so switching panels never moves the rail.
+   ========================================================================== */
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    background-color: var(--surface-canvas);
+  }
+
+  /* The theme lives on <html> so the rail, the panels and any portalled
+     overlay all resolve the same token values. */
+  html[data-theme="light"] body {
+    background-color: var(--surface-canvas);
+  }
+}
+
+@layer components {
+  /* A panel: the bounded unit of the workspace. */
+  .cc-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background-color: var(--surface-base);
+    border: var(--border-width-hairline) solid var(--border-default);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+
+  .cc-panel__header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-shrink: 0;
+    padding: var(--space-3) var(--panel-padding);
+    border-bottom: var(--border-width-hairline) solid var(--border-subtle);
+  }
+
+  .cc-panel__title {
+    margin: 0;
+    font-size: var(--text-md);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--leading-snug);
+    color: var(--text-primary);
+  }
+
+  .cc-panel__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: var(--panel-padding);
+  }
+
+  /* --- Stat tile ---
+     A figure first, label second. The number is set in mono with tabular
+     figures so a live-updating value does not shift the layout as it ticks. */
+  .cc-stat {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--panel-padding);
+    background-color: var(--surface-raised);
+    border: var(--border-width-hairline) solid var(--border-default);
+    border-radius: var(--radius-md);
+  }
+
+  .cc-stat__value {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xl);
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+    line-height: var(--leading-none);
+    color: var(--text-primary);
+  }
+
+  .cc-stat__unit {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+  }
+
+  .cc-stat__delta {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .cc-stat__delta--up {
+    color: var(--status-success);
+  }
+  .cc-stat__delta--down {
+    color: var(--status-danger);
+  }
+}

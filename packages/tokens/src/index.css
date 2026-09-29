@@ -1,0 +1,38 @@
+/* =============================================================================
+   @celastyle/tokens — single entry point
+   -----------------------------------------------------------------------------
+   Import this once, at the root of your app:
+
+     @import "@celastyle/tokens";
+
+   Layer order matters and is fixed:
+     1. primitives   — raw ramps (Graphite, Lime, status). Not for components.
+     2. foundations  — scale tokens (type, space, radius, elevation, motion, z).
+     3. themes       — semantic mapping. This is the layer components use.
+     4. base/util    — optional global defaults and shared patterns.
+
+   Components should only ever reference the semantic layer. If a component
+   needs a value that has no semantic token, that is a gap in this file, not a
+   reason to reach into --graphite-* or --lime-*.
+   ========================================================================== */
+
+/* 1 — Primitives */
+@import "./primitives/graphite.css";
+@import "./primitives/lime.css";
+@import "./primitives/status.css";
+
+/* 2 — Foundations */
+@import "./foundations/typography.css";
+@import "./foundations/spacing.css";
+@import "./foundations/radius.css";
+@import "./foundations/elevation.css";
+@import "./foundations/motion.css";
+@import "./foundations/layers.css";
+
+/* 3 — Themes */
+@import "./themes/dark.css";
+@import "./themes/light.css";
+
+/* 4 — Base + utilities */
+@import "./base/base.css";
+@import "./base/utilities.css";

@@ -1,0 +1,26 @@
+{
+  "name": "@celastyle/tokens",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Framework-agnostic design tokens for CelaStyle — Graphite base with a Lime signal accent.",
+  "license": "MIT",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "exports": {
+    ".": "./src/index.css",
+    "./css": "./src/index.css",
+    "./primitives/*": "./src/primitives/*.css",
+    "./foundations/*": "./src/foundations/*.css",
+    "./themes/*": "./src/themes/*.css",
+    "./package.json": "./package.json"
+  },
+  "sideEffects": [
+    "*.css"
+  ],
+  "scripts": {
+    "build": "node -e \"console.log('@celastyle/tokens ships plain CSS — no build step required.')\"",
+    "typecheck": "echo \"no TypeScript in @celastyle/tokens\" && exit 0"
+  }
+}

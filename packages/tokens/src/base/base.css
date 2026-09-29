@@ -1,0 +1,103 @@
+/* =============================================================================
+   Base defaults
+   -----------------------------------------------------------------------------
+   Deliberately minimal. This file is opt-in via a single import and only
+   establishes the document-level defaults a token-driven UI expects — it is
+   not a reset, and it will not fight one. Projects using Tailwind Preflight or
+   a CSS reset of their own can skip it.
+   ========================================================================== */
+
+:root {
+  /* The one knob that should differ between a live wall and a laptop. */
+  --celastyle-font-size-base: 100%;
+}
+
+html {
+  font-size: var(--celastyle-font-size-base);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  font-weight: var(--font-weight-regular);
+  color: var(--text-primary);
+  background-color: var(--surface-canvas);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-variant-numeric: tabular-nums; /* metrics must not jitter as they update */
+}
+
+/* Anything using the mono lane gets the same tabular treatment, so numeric
+   columns in the Command Rail and dense cards stay vertically aligned. */
+code,
+kbd,
+pre,
+samp,
+[class*="mono"] {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A single, consistent focus treatment across every interactive element.
+   Uses :focus-visible so a mouse click does not leave a ring behind, while
+   keyboard navigation always gets one. */
+:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+  border-radius: var(--radius-xs);
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Selection */
+::selection {
+  background-color: var(--accent-muted);
+  color: var(--text-primary);
+}
+
+/* Scrollbars — thin and neutral, so a dense panel's scrollbar does not
+   compete with the data next to it. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--border-strong);
+  border-radius: var(--radius-full);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--text-muted);
+}
+
+/* Respect the motion tokens' reduced-motion contract for scroll-driven and
+   SMIL animation as well, not just the ones declared in motion.css. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

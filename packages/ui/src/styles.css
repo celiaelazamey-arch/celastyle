@@ -1,0 +1,14 @@
+/* =============================================================================
+   @celastyle/ui — aggregate stylesheet
+   -----------------------------------------------------------------------------
+   The single import a consuming app needs. Order matters: tokens first so the
+   custom properties exist before any component rule resolves them, then base
+   defaults, then components (so a component can safely win a specificity tie
+   against a utility).
+   ========================================================================== */
+
+@import "@celastyle/tokens";
+
+/* Component styles */
+@import "./command-rail/command-rail.css";
+@import "./compact-card/compact-card.css";

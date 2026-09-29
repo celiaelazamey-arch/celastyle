@@ -1,0 +1,86 @@
+/* =============================================================================
+   Typography
+   -----------------------------------------------------------------------------
+   Command-center type is dense and functional: a 14px body, a tight scale, and
+   a monospace lane reserved for anything that must be scanned column-wise
+   (IDs, timestamps, counts, IP/port pairs).
+
+   The font stacks name Inter and JetBrains Mono first so a project can drop in
+   the webfonts and get the intended rendering immediately. The system fallbacks
+   keep the package correct when it is consumed with no network access.
+
+   Override in your app to rebind the faces:
+     @font-face { ... }
+     :root { --font-sans: 'YourType', sans-serif; }
+   ========================================================================== */
+
+:root {
+  /* --- Families --- */
+  --font-sans: "Inter var", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", "SF Mono", "Cascadia Code",
+    Menlo, Consolas, "Liberation Mono", monospace;
+  --font-display: var(--font-sans);
+
+  /* --- Weights --- */
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* --- Size scale (1.125 modular, anchored at 14px) ---
+     Base size is 14px because a command center shows a lot of rows at once;
+     16px costs ~14% of vertical density for no gain on a dense panel. */
+  --text-2xs: 0.6875rem; /* 11px — timestamps, badge text, axis labels */
+  --text-xs: 0.75rem; /*    12px — metadata, card subtitles */
+  --text-sm: 0.8125rem; /*  13px — secondary body, table cells */
+  --text-base: 0.875rem; /* 14px — body, primary UI */
+  --text-md: 1rem; /*       16px — card titles, emphasized body */
+  --text-lg: 1.125rem; /*    18px — panel headings */
+  --text-xl: 1.25rem; /*     20px — page titles */
+  --text-2xl: 1.5rem; /*     24px — display figures */
+  --text-3xl: 1.875rem; /*   30px — hero metrics */
+  --text-4xl: 2.25rem; /*    36px — dashboard headline */
+
+  /* --- Leading, matched to size ---
+     Large type needs proportionally more leading or it looks cramped;
+     small type needs less or it drifts apart. */
+  --leading-none: 1;
+  --leading-tight: 1.15;
+  --leading-snug: 1.3;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+
+  /* --- Tracking ---
+     Negative at display sizes (optical correction), positive at 11px where
+     the small size otherwise turns muddy. */
+  --tracking-tighter: -0.02em;
+  --tracking-tight: -0.01em;
+  --tracking-normal: 0em;
+  --tracking-wide: 0.02em;
+  --tracking-widest: 0.06em;
+  --tracking-caps: 0.08em; /* for uppercase micro-labels */
+
+  /* --- Ready-made text roles ---
+     These encode size + leading + weight together so a role is a single
+     reference. Prefer these over reassembling the three scales by hand. */
+  --text-role-micro: 600 var(--text-2xs) / var(--leading-tight)
+    var(--font-sans);
+  --text-role-label: 500 var(--text-xs) / var(--leading-snug) var(--font-sans);
+  --text-role-body-sm: var(--font-weight-regular) var(--text-sm) /
+    var(--leading-normal) var(--font-sans);
+  --text-role-body: var(--font-weight-regular) var(--text-base) /
+    var(--leading-normal) var(--font-sans);
+  --text-role-body-strong: var(--font-weight-semibold) var(--text-base) /
+    var(--leading-normal) var(--font-sans);
+  --text-role-title: var(--font-weight-semibold) var(--text-md) /
+    var(--leading-snug) var(--font-sans);
+  --text-role-heading: var(--font-weight-semibold) var(--text-lg) /
+    var(--leading-snug) var(--font-sans);
+  --text-role-metric: var(--font-weight-semibold) var(--text-3xl) /
+    var(--leading-none) var(--font-mono);
+  --text-role-data: var(--font-weight-medium) var(--text-sm) /
+    var(--leading-normal) var(--font-mono);
+  --text-role-code: var(--font-weight-medium) var(--text-xs) /
+    var(--leading-relaxed) var(--font-mono);
+}

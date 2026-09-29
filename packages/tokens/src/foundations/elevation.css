@@ -1,0 +1,35 @@
+/* =============================================================================
+   Elevation
+   -----------------------------------------------------------------------------
+   Dark interfaces cannot rely on shadow the way light ones do — a shadow on a
+   near-black canvas is nearly invisible. Elevation here is carried mainly by
+   surface lightness (see --surface-* in the themes) and by borders, with
+   shadows reserved for elements that genuinely float above the plane:
+   popovers, modals, and dragged cards.
+   ========================================================================== */
+
+:root {
+  --shadow-none: none;
+
+  /* Resting — barely there, just enough to seat an element on its surface. */
+  --shadow-xs: 0 1px 2px rgb(0 0 0 / 20%);
+  --shadow-sm: 0 1px 3px rgb(0 0 0 / 28%), 0 1px 2px rgb(0 0 0 / 20%);
+
+  /* Raised — popovers, menus, tooltips. */
+  --shadow-md: 0 4px 12px rgb(0 0 0 / 34%), 0 2px 4px rgb(0 0 0 / 22%);
+  --shadow-lg: 0 12px 28px rgb(0 0 0 / 40%), 0 4px 8px rgb(0 0 0 / 24%);
+
+  /* Floating — modals, sheets, dragged cards. */
+  --shadow-xl: 0 24px 56px rgb(0 0 0 / 48%), 0 8px 16px rgb(0 0 0 / 28%);
+  --shadow-2xl: 0 40px 80px rgb(0 0 0 / 56%), 0 16px 32px rgb(0 0 0 / 32%);
+
+  /* --- Focus ring ---
+     Lime, because focus is an active-system state and should read the same as
+     selection. The offset keeps it legible against both a card and a canvas. */
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+  --focus-ring-color: var(--lime-400);
+  --focus-ring: 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
+  --focus-ring-complete: var(--focus-ring), 0 0 0 var(--focus-ring-offset)
+    var(--lime-a30);
+}

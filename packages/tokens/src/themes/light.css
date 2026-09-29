@@ -1,0 +1,82 @@
+/* =============================================================================
+   Light theme
+   -----------------------------------------------------------------------------
+   Same semantic names, inverted values — a component written against
+   `--surface-raised` / `--text-secondary` works untouched in either theme.
+
+   Lime needs different weights here. On dark it is lime-400 (light on dark);
+   on white, lime-400 at 11px fails contrast, so the accent drops to lime-600
+   and the tinted fills deepen. This is why the semantic layer exists: the
+   raw ramp value is allowed to differ per theme while the role does not.
+   ========================================================================== */
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  /* --- Surfaces --- */
+  --surface-canvas: var(--graphite-100); /* page background */
+  --surface-base: var(--graphite-25); /* panels at rest */
+  --surface-raised: var(--graphite-0); /* cards, list items */
+  --surface-overlay: var(--graphite-0); /* popovers, menus */
+  --surface-inset: var(--graphite-50); /* wells, code blocks */
+  --surface-sunken: var(--graphite-100);
+
+  --surface-hover: rgb(11 15 19 / 4%);
+  --surface-active: rgb(11 15 19 / 8%);
+  --surface-selected: var(--lime-a15);
+
+  /* --- Command Rail --- */
+  --surface-rail: var(--graphite-900);
+  --surface-rail-hover: rgb(255 255 255 / 8%);
+  --surface-rail-active: var(--lime-a20);
+  --rail-indicator: var(--lime-300);
+
+  /* --- Text --- */
+  --text-primary: var(--graphite-900);
+  --text-secondary: var(--graphite-600);
+  --text-tertiary: var(--graphite-500);
+  --text-muted: var(--graphite-400);
+  --text-disabled: var(--graphite-300);
+  --text-inverse: var(--graphite-0);
+  --text-accent: var(--lime-700);
+  --text-on-accent: var(--graphite-0);
+
+  /* --- Borders --- */
+  --border-subtle: var(--graphite-100);
+  --border-default: var(--graphite-200);
+  --border-strong: var(--graphite-400);
+  --border-accent: var(--lime-600);
+  --border-focus: var(--lime-600);
+
+  /* --- Accent (deeper lime for contrast on white) --- */
+  --accent: var(--lime-600);
+  --accent-hover: var(--lime-700);
+  --accent-active: var(--lime-800);
+  --accent-subtle: var(--lime-a20);
+  --accent-muted: var(--lime-a40);
+  --accent-contrast: var(--graphite-0);
+
+  /* --- Status (deepened one step) --- */
+  --status-success: var(--status-success-600);
+  --status-success-subtle: var(--status-success-a15);
+  --status-success-muted: var(--status-success-a30);
+
+  --status-warning: var(--status-warning-600);
+  --status-warning-subtle: var(--status-warning-a15);
+  --status-warning-muted: var(--status-warning-a30);
+
+  --status-danger: var(--status-danger-600);
+  --status-danger-subtle: var(--status-danger-a15);
+  --status-danger-muted: var(--status-danger-a30);
+
+  --status-info: var(--status-info-600);
+  --status-info-subtle: var(--status-info-a15);
+  --status-info-muted: var(--status-info-a30);
+
+  /* --- Skeleton --- */
+  --skeleton-base: var(--graphite-100);
+  --skeleton-sheen: rgb(255 255 255 / 60%);
+
+  /* --- Focus --- */
+  --focus-ring-color: var(--lime-600);
+}

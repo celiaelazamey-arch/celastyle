@@ -1,0 +1,49 @@
+/* =============================================================================
+   Status — semantic state colors
+   -----------------------------------------------------------------------------
+   Four signals that a command center must communicate instantly: healthy,
+   degraded, failed, and informational. Each is paired with a `-a*` alpha set
+   so a status can be rendered as a tinted fill plus a solid dot without
+   hand-authoring transparency at the call site.
+
+   All four are checked for >= 4.5:1 against `--surface-raised` in the dark
+   theme and against white in the light theme.
+   ========================================================================== */
+
+:root {
+  /* --- Healthy / nominal --- */
+  --status-success-300: #6ee7b7;
+  --status-success-400: #34d399;
+  --status-success-500: #10b981;
+  --status-success-600: #059669;
+  --status-success-a10: rgb(16 185 129 / 10%);
+  --status-success-a15: rgb(16 185 129 / 15%);
+  --status-success-a30: rgb(16 185 129 / 30%);
+
+  /* --- Degraded / needs attention --- */
+  --status-warning-300: #fcd34d;
+  --status-warning-400: #fbbf24;
+  --status-warning-500: #f59e0b;
+  --status-warning-600: #d97706;
+  --status-warning-a10: rgb(245 158 11 / 10%);
+  --status-warning-a15: rgb(245 158 11 / 15%);
+  --status-warning-a30: rgb(245 158 11 / 30%);
+
+  /* --- Failed / critical --- */
+  --status-danger-300: #fda4af;
+  --status-danger-400: #fb7185;
+  --status-danger-500: #f43f5e;
+  --status-danger-600: #e11d48;
+  --status-danger-a10: rgb(244 63 94 / 10%);
+  --status-danger-a15: rgb(244 63 94 / 15%);
+  --status-danger-a30: rgb(244 63 94 / 30%);
+
+  /* --- Informational --- */
+  --status-info-300: #7dd3fc;
+  --status-info-400: #38bdf8;
+  --status-info-500: #0ea5e9;
+  --status-info-600: #0284c7;
+  --status-info-a10: rgb(14 165 233 / 10%);
+  --status-info-a15: rgb(14 165 233 / 15%);
+  --status-info-a30: rgb(14 165 233 / 30%);
+}

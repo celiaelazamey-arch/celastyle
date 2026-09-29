@@ -1,0 +1,87 @@
+/* =============================================================================
+   Dark theme — the default
+   -----------------------------------------------------------------------------
+   A command center is watched for long stretches, often on a wall or in a dim
+   room, so dark is the default rather than an alternate. Lime is the only
+   chroma allowed, which is what lets an operator pick out the active panel
+   and the live feed from across the room.
+
+   Override by setting `data-theme="dark"` on <html>; the selectors below use
+   :root so the mapping still applies when the attribute is absent.
+   ========================================================================== */
+
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* --- Surfaces ---
+     A five-step ladder. The spacing between steps is small on purpose: in a
+     multi-panel workspace the panels must be distinguishable without the gaps
+     between them reading as accidental. */
+  --surface-canvas: var(--graphite-1000); /* app background, furthest back */
+  --surface-base: var(--graphite-950); /* panels at rest */
+  --surface-raised: var(--graphite-900); /* cards, list items */
+  --surface-overlay: var(--graphite-850); /* popovers, menus, hover cards */
+  --surface-inset: var(--graphite-1000); /* wells, code blocks, table stripes */
+  --surface-sunken: #030405; /* behind the canvas; modal scrim targets this */
+
+  /* Interaction washes — white at low alpha, so they work on any surface. */
+  --surface-hover: rgb(255 255 255 / 4%);
+  --surface-active: rgb(255 255 255 / 8%);
+  --surface-selected: var(--lime-a10);
+
+  /* --- Command Rail specific --- */
+  --surface-rail: var(--graphite-950);
+  --surface-rail-hover: rgb(255 255 255 / 5%);
+  --surface-rail-active: var(--lime-a15);
+  --rail-indicator: var(--lime-400);
+
+  /* --- Text --- */
+  --text-primary: var(--graphite-50); /* 4 body copy */
+  --text-secondary: var(--graphite-300); /* supporting copy, table cells */
+  --text-tertiary: var(--graphite-400); /* labels, timestamps */
+  --text-muted: var(--graphite-500); /* placeholders, disabled-but-readable */
+  --text-disabled: var(--graphite-600); /* 5.2:1 on raised — decorative only */
+  --text-inverse: var(--graphite-1000); /* text on a light/accent fill */
+  --text-accent: var(--lime-400);
+  --text-on-accent: var(--graphite-1000); /* 10.4:1 on lime-400 */
+
+  /* --- Borders --- */
+  --border-subtle: var(--graphite-850); /* row dividers inside a card */
+  --border-default: var(--graphite-800); /* card edges */
+  --border-strong: var(--graphite-700); /* emphasized or hovered edges */
+  --border-accent: var(--lime-500);
+  --border-focus: var(--lime-400);
+
+  /* --- Accent --- */
+  --accent: var(--lime-400);
+  --accent-hover: var(--lime-300);
+  --accent-active: var(--lime-500);
+  --accent-subtle: var(--lime-a10); /* tinted fill behind accent-tinted content */
+  --accent-muted: var(--lime-a20); /* borders and separators that read as accent */
+  --accent-contrast: var(--graphite-1000); /* text/icon on a solid accent fill */
+
+  /* --- Status --- */
+  --status-success: var(--status-success-400);
+  --status-success-subtle: var(--status-success-a10);
+  --status-success-muted: var(--status-success-a30);
+
+  --status-warning: var(--status-warning-400);
+  --status-warning-subtle: var(--status-warning-a10);
+  --status-warning-muted: var(--status-warning-a30);
+
+  --status-danger: var(--status-danger-400);
+  --status-danger-subtle: var(--status-danger-a10);
+  --status-danger-muted: var(--status-danger-a30);
+
+  --status-info: var(--status-info-400);
+  --status-info-subtle: var(--status-info-a10);
+  --status-info-muted: var(--status-info-a30);
+
+  /* --- Skeleton / loading --- */
+  --skeleton-base: var(--graphite-850);
+  --skeleton-sheen: rgb(255 255 255 / 6%);
+
+  /* --- Focus --- */
+  --focus-ring-color: var(--lime-400);
+}

@@ -1,0 +1,25 @@
+/* =============================================================================
+   Radius & Border width
+   -----------------------------------------------------------------------------
+   Tight radii. A command center reads as instrumentation, and instrumentation
+   is machined, not rounded. 2-6px keeps dense elements feeling like one
+   continuous system; the soft end is reserved for overlays and large panels.
+   ========================================================================== */
+
+:root {
+  --radius-none: 0px;
+  --radius-xs: 2px; /* inline chips, badges, tiny dots */
+  --radius-sm: 4px; /* compact cards, rail items, inputs */
+  --radius-md: 6px; /* buttons, cards at rest */
+  --radius-lg: 8px; /* panels, popovers */
+  --radius-xl: 12px; /* modals, sheets */
+  --radius-2xl: 16px; /* hero surfaces */
+  --radius-3xl: 24px; /* marketing / display only */
+  --radius-full: 9999px; /* status dots, avatars */
+
+  /* --- Border widths --- */
+  --border-width-none: 0px;
+  --border-width-hairline: 1px;
+  --border-width-thick: 2px;
+  --border-width-heavy: 3px;
+}

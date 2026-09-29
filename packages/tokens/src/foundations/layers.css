@@ -1,0 +1,24 @@
+/* =============================================================================
+   Layers (z-index scale)
+   -----------------------------------------------------------------------------
+   A fixed scale beats ad-hoc z-index numbers: an overlay can never end up
+   under a panel it belongs above, and reordering the UI becomes a matter of
+   moving a value between steps rather than hunting for a magic number.
+
+   Steps are spaced 10 apart so a layer can be slotted in without renumbering.
+   ========================================================================== */
+
+:root {
+  --z-base: 0; /* in-flow content */
+  --z-raised: 10; /* cards lifted by hover/drag */
+  --z-sticky: 20; /* sticky headers within a panel */
+  --z-rail: 30; /* the command rail, pinned to the viewport edge */
+  --z-sidebar: 40; /* workspace sidebar, above the rail's surface */
+
+  --z-dropdown: 100; /* menus, selects, comboboxes */
+  --z-overlay: 200; /* scrims, hover cards */
+  --z-modal: 300; /* dialogs and sheets */
+  --z-toast: 400; /* transient notifications */
+  --z-tooltip: 500; /* must be last — tooltips sit over everything */
+  --z-live-region: 600; /* screen-reader announcements, visually hidden */
+}

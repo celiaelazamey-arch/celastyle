@@ -1,0 +1,261 @@
+/* =============================================================================
+   Command Rail
+   -----------------------------------------------------------------------------
+   A vertical navigation spine pinned to the leading edge of the workspace.
+
+   Elevation note: the rail sits on --surface-canvas but uses --surface-rail,
+   which is one step lighter, so the workspace edge reads as a distinct plane
+   without needing a drop shadow — on a dark canvas a shadow is invisible.
+   ========================================================================== */
+
+.cs-rail {
+  --_rail-w: var(--rail-width);
+
+  position: sticky;
+  top: 0;
+  z-index: var(--z-rail);
+
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: var(--_rail-w);
+  height: 100vh;
+  height: 100dvh;
+
+  background-color: var(--surface-rail);
+  border-right: var(--border-width-hairline) solid var(--border-default);
+
+  transition: width var(--duration-normal) var(--ease-standard);
+}
+
+.cs-rail[data-mode="expanded"] {
+  --_rail-w: 208px;
+}
+
+/* --- Sections ------------------------------------------------------------ */
+
+.cs-rail__header,
+.cs-rail__footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: var(--space-2) 0;
+}
+
+.cs-rail__header {
+  border-bottom: var(--border-width-hairline) solid var(--border-subtle);
+}
+
+.cs-rail__footer {
+  margin-top: auto;
+  border-top: var(--border-width-hairline) solid var(--border-subtle);
+}
+
+.cs-rail__list {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
+  flex: 1 1 auto;
+  padding: var(--space-2) var(--space-1-5);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* --- Item ---------------------------------------------------------------- */
+
+.cs-rail__item {
+  position: relative;
+
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+
+  /* --control-height-lg gives a comfortable pointer target; the visual
+     density comes from the gap above, not from shrinking the hit area. */
+  min-height: var(--control-height-lg);
+  padding: var(--space-1-5) var(--space-2);
+
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--leading-snug);
+  text-align: left;
+
+  color: var(--text-tertiary);
+  background-color: transparent;
+  border: var(--border-width-none) solid transparent;
+  border-radius: var(--radius-sm);
+
+  cursor: pointer;
+  transition: var(--transition-colors), var(--transition-transform);
+}
+
+.cs-rail__item:hover:not(:disabled) {
+  color: var(--text-primary);
+  background-color: var(--surface-rail-hover);
+}
+
+.cs-rail__item:disabled {
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+
+.cs-rail__item[data-active] {
+  color: var(--text-accent);
+  background-color: var(--surface-rail-active);
+}
+
+/* The lime edge. Positioned outside the item's padding so it aligns to the
+   rail's own edge rather than floating inside the item. */
+.cs-rail__indicator {
+  position: absolute;
+  left: calc(var(--space-1-5) * -1);
+  top: 50%;
+  width: var(--border-width-thick);
+  height: 0;
+  background-color: var(--rail-indicator);
+  border-radius: 0 var(--radius-full) var(--radius-full) 0;
+  transform: translateY(-50%);
+  transition: height var(--duration-normal) var(--ease-emphasized);
+}
+
+.cs-rail__item[data-active] .cs-rail__indicator {
+  height: calc(100% - var(--space-2));
+}
+
+.cs-rail__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  /* Fixed box so labels stay aligned whether or not an item has an icon. */
+  width: 20px;
+  height: 20px;
+}
+
+.cs-rail__icon .cs-icon {
+  width: 100%;
+  height: 100%;
+}
+
+.cs-rail__badge {
+  margin-left: auto;
+  flex-shrink: 0;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 var(--space-1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--text-primary);
+
+  background-color: var(--surface-overlay);
+  border: var(--border-width-hairline) solid var(--border-default);
+  border-radius: var(--radius-full);
+}
+
+.cs-rail__item[data-active] .cs-rail__badge {
+  color: var(--accent-contrast);
+  background-color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* --- Label & tooltip -----------------------------------------------------
+   The label stays in the DOM (it is the accessible name) and is repositioned
+   as a tooltip in icon mode. One element serves both a screen reader and a
+   sighted user, which avoids the usual duplicate-label pattern.
+   ---------------------------------------------------------------------- */
+
+.cs-rail__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cs-rail[data-mode="expanded"] .cs-rail__label {
+  flex: 1 1 auto;
+}
+
+.cs-rail[data-mode="icon"] .cs-rail__label {
+  position: absolute;
+  left: calc(100% + var(--space-3));
+  top: 50%;
+  z-index: var(--z-tooltip);
+
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+
+  padding: var(--space-1-5) var(--space-2);
+  max-width: 240px;
+
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+  background-color: var(--surface-overlay);
+  border: var(--border-width-hairline) solid var(--border-default);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-50%) translateX(var(--space-1));
+  transition: opacity var(--duration-fast) var(--ease-decelerate),
+    transform var(--duration-fast) var(--ease-decelerate);
+}
+
+/* Show the tooltip on keyboard focus too — otherwise the rail is unusable
+   without a mouse, since the icon alone carries no visible name. */
+.cs-rail[data-mode="icon"] .cs-rail__item:hover .cs-rail__label,
+.cs-rail[data-mode="icon"] .cs-rail__item:focus-visible .cs-rail__label {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+.cs-rail__shortcut {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-muted);
+  background-color: var(--surface-inset);
+  border: var(--border-width-hairline) solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  padding: 1px var(--space-1);
+  margin-left: auto;
+}
+
+/* In expanded mode the shortcut belongs inline at the end of the row, not
+   inside the label's own text run. */
+.cs-rail[data-mode="expanded"] .cs-rail__shortcut {
+  margin-left: auto;
+}
+
+/* --- Focus -------------------------------------------------------------- */
+
+.cs-rail__item:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: calc(var(--focus-ring-offset) * -1);
+  border-radius: var(--radius-sm);
+}
+
+/* --- Reduced motion ------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .cs-rail,
+  .cs-rail__item,
+  .cs-rail__indicator,
+  .cs-rail[data-mode="icon"] .cs-rail__label {
+    transition-duration: 1ms;
+  }
+}

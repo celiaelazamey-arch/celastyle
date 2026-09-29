@@ -1,0 +1,124 @@
+/* =============================================================================
+   Motion
+   -----------------------------------------------------------------------------
+   Motion in a command center has one job: explain what changed, fast, without
+   making a dense screen feel twitchy. Durations are therefore short and the
+   default easing is decelerate (fast in, settle out).
+
+   Two named behaviors exist because they are load-bearing for a live
+   interface and should be identical everywhere:
+     --motion-pulse-live  a "data is streaming" breath on live indicators
+     --motion-shimmer     a loading sweep for skeletons
+
+   Both are exported as shorthand `animation` values and honor
+   prefers-reduced-motion, which the consumer block below enforces.
+   ========================================================================== */
+
+:root {
+  /* --- Durations ---
+     120ms is the floor for anything the user triggered: below that, motion
+     reads as a flicker rather than an explanation. */
+  --duration-instant: 0ms;
+  --duration-fast: 120ms;
+  --duration-normal: 180ms;
+  --duration-slow: 280ms;
+  --duration-slower: 400ms;
+  --duration-deliberate: 600ms;
+
+  /* --- Easing ---
+     Standard is a symmetric workhorse; accelerate is for exits (it leaves
+     quickly because the element is going away); decelerate is for entrances;
+     emphasized adds a touch of overshoot for state changes. */
+  --ease-linear: cubic-bezier(0, 0, 1, 1);
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-decelerate: cubic-bezier(0, 0, 0, 1);
+  --ease-accelerate: cubic-bezier(0.3, 0, 1, 1);
+  --ease-emphasized: cubic-bezier(0.2, 0, 0, 20);
+
+  /* --- Transition shorthands ---
+     `transform` and `opacity` are listed first so the browser composites them
+     without triggering layout. Deliberately no `all` — it animates properties
+     nobody intended and is a common source of jank. */
+  --transition-colors: color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    fill var(--duration-fast) var(--ease-standard),
+    stroke var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+
+  --transition-transform: transform var(--duration-normal)
+      var(--ease-standard),
+    opacity var(--duration-normal) var(--ease-standard);
+
+  --transition-all-fast: color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    opacity var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+
+  --transition-all-slow: color var(--duration-slow) var(--ease-standard),
+    background-color var(--duration-slow) var(--ease-standard),
+    border-color var(--duration-slow) var(--ease-standard),
+    opacity var(--duration-slow) var(--ease-standard),
+    transform var(--duration-slow) var(--ease-standard),
+    box-shadow var(--duration-slow) var(--ease-standard);
+
+  /* --- Live-indicator breath ---
+     2s, infinite. Slow enough to sit in peripheral vision without nagging. */
+  --motion-pulse-live: celastyle-pulse 2s var(--ease-standard) infinite;
+  --motion-pulse-live-fast: celastyle-pulse 1.2s var(--ease-standard) infinite;
+
+  /* --- Loading sweep for skeletons --- */
+  --motion-shimmer: celastyle-shimmer 1.6s var(--ease-linear) infinite;
+  --motion-shimmer-duration: 1.6s;
+
+}
+
+/* =============================================================================
+   Keyframes
+   -----------------------------------------------------------------------------
+   Declared at the top level, not inside :root — @keyframes is not valid nested
+   within a style rule, and browsers drop it if written that way.
+   ========================================================================== */
+
+@keyframes celastyle-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes celastyle-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes celastyle-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Reduce motion: strip the decorative/informational loops, keep opacity fades
+   (they carry state changes and removing them causes a hard state swap). */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 1ms;
+    --duration-normal: 1ms;
+    --duration-slow: 1ms;
+    --duration-slower: 1ms;
+    --duration-deliberate: 1ms;
+
+    --motion-pulse-live: none;
+    --motion-pulse-live-fast: none;
+    --motion-shimmer: none;
+  }
+}
